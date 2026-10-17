@@ -18,7 +18,7 @@ python3.12 -m venv .venv                          # Python 3.12; on Windows use 
 | Where | State |
 |---|---|
 | `main` | Scaffold and **the spec**: `CONTRACTS.md` (read it fully; it's the real build plan). Also config, data loader, stats, the evidence object, the Dockerfile, `deploy/` and `DEPLOY.md` (your server runbook). 8 tests pass; lint is clean. |
-| `wip/unfinished-modules` | Workstreams A, B1, B2 and C plus most of D, written in parallel and cut off by a usage limit: coverage and views, all detectors, the Monday brief, the narrator and number validator, the Jev adapter, the store and the CDS order card. **110 tests pass.** Ruff reports 31 issues (30 auto-fixable). Not yet wired together. |
+| `wip/unfinished-modules` | Workstreams A, B1, B2 and C plus most of D, written in parallel and cut off by a usage limit: coverage and views, all detectors, the Monday brief, the narrator and number validator, the Jev adapter, the store and the CDS order card. **110 tests pass** (checked from a fresh clone merged with main). After the merge, ruff reports 24 issues, all auto-fixable. Not yet wired together. |
 | Missing | `aei/api.py` (FastAPI, endpoints in CONTRACTS §7 and §7b), `aei/precompute.py`, and the **whole UI** (`web/`). There's no design yet; see §5. |
 
 **First move:**
