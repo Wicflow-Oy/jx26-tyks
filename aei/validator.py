@@ -111,9 +111,9 @@ PREDICTION_TERMS = {
            r"kommer\s+att\s+(?:öka|stiga|spridas|sprida|växa|fortsätta|förvärras)"),
 }
 RESTRICTED_TERMS = {
-    "en": (r"decoys?", r"outbreaks?", r"epidemics?(?!\s+check)", "confirmed", r"s\s*/\s*i\s*/\s*r", "intermediate",
+    "en": (r"decoys?", r"outbreaks?", r"epidemics?", "confirmed", r"s\s*/\s*i\s*/\s*r", "intermediate",
            r"zero\s+resistance", r"no\s+resistance", r"same\s+(?:strain|clone)", r"clon(?:e|es|al|ality|ed)"),
-    "fi": (r"epidemia(?!selvity)\w*", r"taudinpurk\w*", r"vahvistettu\w*", r"varmistettu\w*", r"klooni\w*", r"sama\s+kanta\w*",
+    "fi": (r"epidemia\w*", r"taudinpurk\w*", r"vahvistettu\w*", r"varmistettu\w*", r"klooni\w*", r"sama\s+kanta\w*",
            r"harhautu\w*", r"syötti\w*"),
     "sv": (r"utbrott\w*", r"epidemi(?:n|er|erna|sk\w*)?", r"bekräftad\w*", "bekräftat", r"klon\w*", r"samma\s+stam\w*",
            r"lockbete\w*", r"bulvan\w*", r"ingen\s+resistens", r"intermediär\w*"),
@@ -255,7 +255,7 @@ def _candidate_kinds(value) -> tuple[str, ...]:
         if all(0.0 <= float(v) <= 1.0 for v in value):
             kinds += ["ci0", "ci1"]
         return tuple(kinds)
-    if isinstance(value, (_dt.date, _dt.datetime)) or _is_iso_date(value) or type(value).__name__ == "Timestamp":
+    if isinstance(value, _dt.date) or _is_iso_date(value):  # datetime and pd.Timestamp are date subclasses
         return ("date", "short_date", "text")
     return ("text",)
 
