@@ -26,8 +26,15 @@ from .. import config
 from ..render import render_id
 from . import cached as _cached
 from . import guard as _guard
-from .base import LANGUAGE_NAMES, Narration, check_request, narrate_skeleton, plain_skeleton, template_fallback, \
-    template_slots
+from .base import (
+    LANGUAGE_NAMES,
+    Narration,
+    check_request,
+    narrate_skeleton,
+    plain_skeleton,
+    template_fallback,
+    template_slots,
+)
 
 log = logging.getLogger(__name__)
 

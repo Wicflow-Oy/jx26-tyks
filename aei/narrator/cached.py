@@ -19,7 +19,13 @@ from pathlib import Path
 
 from .. import config
 from . import guard as _guard
-from .base import AUDIENCES, Narration, check_request, narrate_skeleton, template_fallback
+from .base import (
+    AUDIENCES,
+    Narration,
+    check_request,
+    narrate_skeleton,
+    template_fallback,
+)
 
 MODES = ("replay", "record")
 
@@ -77,7 +83,7 @@ def store(narrator, template_id: str, slots: dict, *, audience: str, language: s
     entry = {"key": key, "provider": narration.provider, "model": narration.model,
              "prompt_version": narrator.prompt_version, "template_id": template_id, "audience": audience,
              "language": language, "skeleton": narration.skeleton,
-             "created": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")}
+             "created": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")}
     fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(entry, fh, ensure_ascii=False, indent=1)

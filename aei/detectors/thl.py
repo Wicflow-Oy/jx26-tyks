@@ -144,7 +144,7 @@ def cluster_episodes(ds, as_of) -> list[dict]:
             continue
         out.append({"ward": ep["ward"], "organism": ep["organism"], "marker": ep["marker"],
                     "first_alert_day": int(a.day.iloc[0]), "last_alert_day": int(a.day.max()),
-                    "first_sample_day": int(a.first_day.iloc[0]), "n_alerts": int(len(a)),
+                    "first_sample_day": int(a.first_day.iloc[0]), "n_alerts": len(a),
                     "max_n_28d": int(a.n.max()), "min_p": float(a.p.min()), "last": a.iloc[-1].to_dict()})
     return out
 
@@ -205,8 +205,8 @@ def _cluster_summary(ds, ep, as_of) -> dict:
     days = (ph.ts(as_of) - first).days + 1
     mu = hist.patient_id.nunique() / HISTORY_DAYS * days
     lo, hi = ph.poisson_range(mu)
-    return {"first": first, "pop": pop, "n_patients": int(len(pats)), "top_pattern": top.index[0], "n_share": int(top.iloc[0]),
-            "n_profiles": int(len(top)), "profiles": {k: int(v) for k, v in top.items()}, "expected": mu, "usual_low": lo,
+    return {"first": first, "pop": pop, "n_patients": len(pats), "top_pattern": top.index[0], "n_share": int(top.iloc[0]),
+            "n_profiles": len(top), "profiles": {k: int(v) for k, v in top.items()}, "expected": mu, "usual_low": lo,
             "usual_high": hi, "days": days, "specimens": sorted(pop.specimen.unique().tolist()),
             "hosp_onset": int(pats.hosp_onset.sum())}
 

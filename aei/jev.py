@@ -292,7 +292,7 @@ class JevAdapter:
 
     def _store(self, key: str, answers: dict) -> None:
         self.path.mkdir(parents=True, exist_ok=True)
-        entry = {**answers, "key": key, "recorded": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")}
+        entry = {**answers, "key": key, "recorded": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")}
         fd, tmp = tempfile.mkstemp(dir=self.path, suffix=".tmp")
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(entry, fh, indent=1)
@@ -412,7 +412,7 @@ def quiet_windows(isolates, *, window_days: int = 28, step_days: int = 28, min_p
                 out.append({"id": f"quiet-{tname.replace(' ', '_').replace('.', '')}-{ward}-{end}", "source": "quiet_window",
                             "label": 0, "type": tname, "organism": org, "marker": marker, "ward": ward,
                             "start_day": int(sel["day"].min()), "n_patients": c, "n_share": c,
-                            "n_marker_patients": int(len(g)), "share_identical": c / len(g),
+                            "n_marker_patients": len(g), "share_identical": c / len(g),
                             "spread_days": int(sel["day"].max() - sel["day"].min()), "third_case_day": None,
                             "background_rate": float((h["profile"] == top).mean()) if len(h) else None,
                             "phenotype_delay_days": None})
@@ -509,7 +509,7 @@ def calibrate(provider, clusters, *, path=None, write: bool = True) -> dict:
                              "max_missing_share": MAX_MISSING_SHARE},
               "passed": not reasons, "reasons": reasons, "sources": sorted({str(c.get("source")) for c in clusters}),
               "note": "Simulated spike-in clusters and chance windows of the synthetic data; not real outbreaks.",
-              "created": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")}
+              "created": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds")}
     if write:
         target = Path(path or calibration_path())
         target.parent.mkdir(parents=True, exist_ok=True)

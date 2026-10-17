@@ -238,7 +238,7 @@ def competing_explanations(ds, ward: str, organism: str, start, as_of, marker: s
         {"id": "H6", "label": "Lab or data artefact", "rating": "unlikely" if consistent else "check",
          "evidence": f"marker consistent with phenotype: {consistent}"},
     ]
-    return {"patients": n, "identical": int(top.iloc[0]), "n_antibiograms": int(len(top)), "start": iso(s), "as_of": iso(e),
+    return {"patients": n, "identical": int(top.iloc[0]), "n_antibiograms": len(top), "start": iso(s), "as_of": iso(e),
             "values": {"expected": round(exp, 3), "p_count": p, "identical_share": round(ident, 3),
                        "background_share": round(bgshare, 4), "p_identity": p_ident, "hospital_onset_share": round(ho, 3),
                        "care_day_1_2_share": round(poa, 3), "index_care_day": idx_day,
@@ -345,7 +345,7 @@ def episodes(ds, as_of) -> list[dict]:
         first = a.iloc[0]
         out.append({"ward": ep["ward"], "organism": ep["organism"], "profile": ep["profile"],
                     "first_alert_day": int(first.day), "last_alert_day": int(a.day.max()), "first_sample_day": int(first.first_day),
-                    "n_alerts": int(len(a)), "npat_first_alert": int(first.npat), "max_npat_28d": int(a.npat.max()),
+                    "n_alerts": len(a), "npat_first_alert": int(first.npat), "max_npat_28d": int(a.npat.max()),
                     "min_p": float(a.p.min()), "first_alert": first.to_dict(), "last_alert": a.iloc[-1].to_dict()})
     return out
 
@@ -399,7 +399,7 @@ def _summary(ds, ep, as_of) -> dict:
     marker = ep.get("marker", cluster_marker(ds, ep, as_of))
     pop = population(ds, ward, org, marker, prof, first, as_of)
     pats = pop.sort_values(["sample_date", "isolate_id"]).drop_duplicates("patient_id")
-    n_patients = int(len(pats))
+    n_patients = len(pats)
     n_share = int(pop[pop.profile == prof].patient_id.nunique())
     # background: the 52 weeks before the first sample (excludes the cluster itself)
     h0, h1 = first - pd.Timedelta(days=HISTORY_DAYS), first - pd.Timedelta(days=1)
@@ -414,11 +414,11 @@ def _summary(ds, ep, as_of) -> dict:
     if marker:
         mk = hist[(hist[marker] == 1) & (hist.organism == org)].sort_values(["sample_date", "isolate_id"])
         mk_pat = mk.drop_duplicates("patient_id")
-        bg_n = int(len(mk_pat))
+        bg_n = len(mk_pat)
         bg_share = float(mk[mk.profile == prof].patient_id.nunique() / bg_n) if bg_n else 0.0
         bg_label = organism_label(org, marker)
     else:
-        bg_n, bg_share, bg_label = int(len(org_panel)), f_org, short_org(org)
+        bg_n, bg_share, bg_label = len(org_panel), f_org, short_org(org)
     return {"marker": marker, "first": first, "pop": pop, "n_patients": n_patients, "n_share": n_share,
             "f_org": f_org, "f_used": f_used, "n_ward_year": n_ward_year, "expected_per_year": mu,
             "expected_low": lo, "expected_high": hi, "bg_n": bg_n, "bg_share": bg_share, "bg_label": bg_label,
@@ -442,7 +442,7 @@ def build_signal(ds, ep, as_of, rule="readme_period") -> dict:
         "filter": {"ward": ward, "specimen": None, "organism": org, "drug": None, "date_from": iso(first),
                    "date_to": iso(as_of), "rule": rule, "profile": prof, "marker": marker,
                    "population": "marker" if marker else "near_identical"},
-        "counts": {"n_patients": sm["n_patients"], "n_share": sm["n_share"], "n_isolates": int(len(sm["pop"])),
+        "counts": {"n_patients": sm["n_patients"], "n_share": sm["n_share"], "n_isolates": len(sm["pop"]),
                    "specimens": sm["specimens"],
                    "patients_28d_at_first_alert": ep["npat_first_alert"], "max_patients_28d": ep["max_npat_28d"],
                    "first_alert_date": iso(first_alert), "last_alert_date": iso(day_date(ep["last_alert_day"])),

@@ -217,7 +217,7 @@ def to_jsonable(o):
 
 
 def _now() -> str:
-    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+    return dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
 
 
 def _day(x) -> str:

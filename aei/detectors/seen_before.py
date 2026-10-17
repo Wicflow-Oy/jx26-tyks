@@ -39,7 +39,7 @@ def background(ds, as_of, organism, pattern, marker) -> dict:
         pop = x[x.profile.map(ph.panel_of) == ph.panel_of(pattern)]
         label = ph.short_org(organism)
     pop = pop.sort_values(["sample_date", "isolate_id"]).drop_duplicates("patient_id")
-    n = int(len(pop))
+    n = len(pop)
     k = int((pop.profile == pattern).sum())
     return {"bg_n": n, "bg_k": k, "bg_share": k / n if n else 0.0, "bg_label": label,
             "strength": "weak" if (n == 0 or k / n >= WEAK_SHARE) else "rare"}
@@ -51,9 +51,9 @@ def cluster_matches(ds, as_of, ward, organism, pattern, first_sample) -> dict:
     here = before[before.ward_code == ward]
     other = before[before.ward_code != ward]
     by_ward = other.groupby("ward_code").size().reset_index(name="n").sort_values(["n", "ward_code"], ascending=[False, True])
-    return {"n_same_ward_before": int(len(here)), "same_ward_dates": [ph.iso(d) for d in here.sample_date],
-            "n_elsewhere_before": int(len(other)), "elsewhere_by_ward": {r.ward_code: int(r.n) for r in by_ward.itertuples()},
-            "n_patients_with_pattern_to_date": int(len(same)), "isolate_ids": before.isolate_id.tolist(),
+    return {"n_same_ward_before": len(here), "same_ward_dates": [ph.iso(d) for d in here.sample_date],
+            "n_elsewhere_before": len(other), "elsewhere_by_ward": {r.ward_code: int(r.n) for r in by_ward.itertuples()},
+            "n_patients_with_pattern_to_date": len(same), "isolate_ids": before.isolate_id.tolist(),
             "last_same_ward_date": ph.iso(here.sample_date.max()) if len(here) else None}
 
 
@@ -134,13 +134,13 @@ def _return_signal(ds, item, as_of, rule) -> dict:
     in_cluster = set(cluster_pop.patient_id)
     latest = run.iloc[-1]
     slots = {"ward": ward, "ward_label": ph.ward_label(ward), "organism_label": ph.organism_label(org, marker), "pattern": prof,
-             "return_date": ph.iso(latest.sample_date), "cluster_first_date": ph.iso(first), "n_return": int(len(rows)),
+             "return_date": ph.iso(latest.sample_date), "cluster_first_date": ph.iso(first), "n_return": len(rows),
              "bg_share": bg["bg_share"], "bg_n": bg["bg_n"], "bg_label": bg["bg_label"]}
     ach = ph.competing_explanations(ds, ward, org, run.sample_date.min(), as_of, marker=marker)
     evidence = {
         "filter": {"ward": ward, "specimen": None, "organism": org, "drug": None, "date_from": ph.iso(run.sample_date.min()),
                    "date_to": ph.iso(as_of), "rule": rule, "profile": prof, "marker": marker, "isolate_ids_only": True},
-        "counts": {"n_return_patients_since_cluster": int(len(rows)), "n_in_current_run": int(len(run)),
+        "counts": {"n_return_patients_since_cluster": len(rows), "n_in_current_run": len(run),
                    "return_dates": [ph.iso(d) for d in rows.sample_date],
                    "latest_care_day": None if pd.isna(latest.care_day_no) else int(latest.care_day_no),
                    "latest_hospital_onset": bool(latest.hosp_onset),

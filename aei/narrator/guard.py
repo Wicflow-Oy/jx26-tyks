@@ -117,7 +117,7 @@ class Guard:
         return conn
 
     def today(self) -> str:
-        return _dt.datetime.fromtimestamp(self.clock(), tz=_dt.timezone.utc).date().isoformat()
+        return _dt.datetime.fromtimestamp(self.clock(), tz=_dt.UTC).date().isoformat()
 
     def spend_today(self) -> float:
         """USD estimated so far this UTC day. Raises sqlite3.Error if the state DB is unusable."""
