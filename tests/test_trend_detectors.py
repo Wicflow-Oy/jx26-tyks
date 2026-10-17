@@ -20,6 +20,7 @@ from aei.templates_trends import TEMPLATES as TREND_TEMPLATES
 MINE = [policy, resistance_change, outlier, expert_rules, completeness]
 DEMO_AS_OF = [str((pd.Timestamp(m) - pd.Timedelta(days=1)).date()) for m in C.DEMO_MONDAYS]
 DIGITS = re.compile(r"\d+")
+FILTER_KEYS = {"ward", "specimen", "organism", "drug", "date_from", "date_to", "rule"}
 BANNED = ["predict", "forecast", "odds", "probability", "best choice", "recommended drug", "ai predicts", "likely to",
           "will rise", "s/i/r", "decoy", "outbreak confirmed"]
 
@@ -59,9 +60,19 @@ def comparable(sigs: list) -> list:
 
 # ---------------------------------------------------------------- policy line (trimethoprim)
 
+def tmp_women_primary_care(ds, end) -> tuple[int, int]:
+    """51_codex_fixes_check by hand: tested urinary E. coli from women in primary care, first per patient in the
+    52 weeks ending `end`; returns (resistant, tested)."""
+    x = ds.isolates
+    pop = x[(x.organism == "Escherichia coli") & (x.specimen == "urine") & x.ward_code.isin(["PHC-N", "PHC-S"])
+            & (x.sex == "F") & x.TMP.notna()]
+    w = data.window(pop, end, 364).sort_values(["sample_date", "isolate_id"]).drop_duplicates("patient_id")
+    return int((w.TMP == "R").sum()), len(w)
+
+
 def test_policy_peak_golden(ds):
     (st,) = policy.policy_states(ds, "2026-06-21")
-    assert (st["x"], st["n"]) == (160, 786)
+    assert (st["x"], st["n"]) == (160, 786) == tmp_women_primary_care(ds, "2026-06-21")
     assert render.fmt(st["rate"], "pct1") == "20.4%"
     assert st["active"] and st["crossed_on"] == "2026-06-21" and st["threshold"] == 0.20
     assert st["counting_rule"] == "readme_period" and st["window_days"] == 364
@@ -69,14 +80,19 @@ def test_policy_peak_golden(ds):
     assert lo < st["rate"] < hi
     assert st["local_guide_alternative"] == C.POLICY_LINES[0]["local_guide_alternative"]
     assert st["local_guide_alternative"]["text"] == "pivmecillinam (local guide)"
-    assert st["prior_as_of"] == "2025-06-22" and st["n_prior"] > 0 and st["rate_prior"] < st["rate"]
+    # prior-year rate: the same rolling window ending 52 weeks earlier
+    assert st["prior_as_of"] == "2025-06-22"
+    assert (st["x_prior"], st["n_prior"]) == (122, 769) == tmp_women_primary_care(ds, "2025-06-22")
+    assert render.fmt(st["rate_prior"], "pct1") == "15.9%"
     assert st["signal_id"] == policy.detect(ds, "2026-06-21")[0]["id"]
 
 
-def test_policy_weeks_at_or_above_line(ds):
-    ends = pd.date_range("2024-09-29", C.DATA_END, freq="7D")
-    active = [str(e.date()) for e in ends if policy.policy_states(ds, e)[0]["active"]]
-    assert active == ["2026-06-21", "2026-06-28", "2026-07-12", "2026-07-19"]
+def test_policy_weeks_at_or_above_line_and_peak(ds):
+    """51's scan range: every week end from 29 Sep 2024 to the end of the data."""
+    states = {str(e.date()): policy.policy_states(ds, e)[0] for e in pd.date_range("2024-09-29", C.DATA_END, freq="7D")}
+    assert [d for d, st in states.items() if st["active"]] == ["2026-06-21", "2026-06-28", "2026-07-12", "2026-07-19"]
+    peak = max(states, key=lambda d: states[d]["rate"])
+    assert peak == "2026-06-21" and (states[peak]["x"], states[peak]["n"]) == (160, 786)
 
 
 def test_policy_latest_and_crossed_on_runs(ds):
@@ -120,6 +136,8 @@ def test_expert_rule_goldens(ds):
     _, h3 = expert_rules.masks(ds.isolates, "cro_r_amp_s")
     _, h4 = expert_rules.masks(ds.isolates, "cro_r_cxm_s")
     assert int((h3 | h4).sum()) == 109
+    odd = ds.isolates[h3 | h4].organism.value_counts().to_dict()
+    assert odd == {"Escherichia coli": 64, "Klebsiella pneumoniae": 45}  # 40_esbl_flag's split of the 109
 
 
 def test_expert_rules_week(ds):
@@ -199,6 +217,7 @@ def test_text_numbers_come_from_slots(ds, as_of):
             assert s["as_of"] == as_of
             for k in ("filter", "counts", "method"):
                 assert k in s["evidence"]
+            assert FILTER_KEYS <= set(s["evidence"]["filter"]), s["kind"]  # re-runnable filter (CONTRACTS section 3)
     check_text(completeness.status_line(ds, as_of))
 
 

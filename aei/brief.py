@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import os
+import tempfile
 import time
 from pathlib import Path
 
@@ -84,12 +85,12 @@ def _read_cache(path: Path, fp: str):
 
 
 def _write_cache(path: Path, payload: dict) -> None:
+    """Write to a unique temp file, then rename: API threads computing the same week never read half a file."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(f".{os.getpid()}.tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, suffix=".tmp", delete=False) as fh:
             json.dump(payload, fh, ensure_ascii=False, default=str)
-        os.replace(tmp, path)
+        os.replace(fh.name, path)
     except OSError as e:
         log.warning("could not write the signals cache: %s", type(e).__name__)
 
@@ -100,7 +101,12 @@ def clear_memory_cache() -> None:
 
 
 def week_signals(ds, as_of, rule: str = DEFAULT_RULE, window: str = DEFAULT_WINDOW, cache: bool = True) -> tuple[list, dict]:
-    """Raw detector output for one as-of date: (signals, {"ran", "skipped"}). Memory -> disk -> compute."""
+    """Raw detector output for one as-of date: (signals, {"ran", "skipped"}). Memory -> disk -> compute.
+    Bad parameters raise here: the registry skips a failing detector, so they would otherwise cache a partial week."""
+    if rule not in ("readme_period", "30d"):
+        raise ValueError(f"unknown counting rule {rule}")
+    if window not in C.WINDOWS:
+        raise ValueError(f"unknown window {window}")
     as_of = _day(as_of)
     fp = fingerprint(ds)
     key = (registry.ds_key(ds), as_of, rule, window, fp)
@@ -238,10 +244,6 @@ def _counts(active: list) -> dict:
 
 def build_brief(ds, as_of, window: str = DEFAULT_WINDOW, rule: str = DEFAULT_RULE, cache: bool = True) -> dict:
     """The Monday brief for data up to `as_of` (a Sunday); dated as_of + 1 day. Strictly as-of."""
-    if rule not in ("readme_period", "30d"):
-        raise ValueError(f"unknown counting rule {rule}")
-    if window not in C.WINDOWS:
-        raise ValueError(f"unknown window {window}")
     as_of = _day(as_of)
     sigs, report = _signals_at(ds, as_of, rule, window, cache)
     active = [s for s in sigs if s["status"] != "resolved"]

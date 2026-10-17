@@ -11,7 +11,7 @@ TEMPLATES = {
     "trend_policy_line": {
         "text": "{drug_label}: {organism_label} in {population_label} is {rate:pct1} resistant ({counts:xofn}, last "
                 "{window_weeks:int} weeks), {relation} the local {threshold:pct0} line since the week ending {crossed_on:date}. "
-                "Same window a year earlier: {rate_prior:pct1} ({counts_prior:xofn}). Local guide alternative: {alternative}."},
+                "Same window a year earlier: {rate_prior:pct1} ({counts_prior:xofn}). Alternative: {alternative}."},
     "trend_ward_outlier": {
         "text": "{ward_label}: {high:xofn} organism–drug resistance rates above their usual range in the last {window_weeks:int} "
                 "weeks ({cells_text}); other units {other_high:xofn}. Unusual pattern across several results."},

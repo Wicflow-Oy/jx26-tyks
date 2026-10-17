@@ -1,21 +1,22 @@
 """Workstream B2: the Monday brief (CONTRACTS.md section 5.2). Offline and deterministic; caches go to a temp dir.
 Parts that depend on workstream B1's detectors (phenotype / thl / seen_before) skip until those modules load."""
 import json
-import re
+import os
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pandas as pd
 import pytest
+from test_trend_detectors import check_text
 
-from aei import brief, data, render, templates
+from aei import brief, data
 from aei import config as C
 from aei import detectors as registry
 from aei import signal as sig
 from aei.detectors import policy, resistance_change
 
-DIGITS = re.compile(r"\d+")
-BANNED = ["predict", "forecast", "odds", "probability", "best choice", "recommended drug", "ai predicts", "likely to",
-          "will rise", "s/i/r", "decoy", "outbreak confirmed"]
 B2_DETECTORS = ["resistance_change", "outlier", "policy", "expert_rules", "completeness"]
 SECTION_KEYS = ["unusual_patterns", "changed", "policy", "seen_before", "data_quality", "quiet"]
 
@@ -30,19 +31,6 @@ def items(b: dict, section: str | None = None) -> list:
 
 def structural(it: dict) -> bool:
     return it["kind"] == "quiet" or it.get("template_id") == "completeness_ok"
-
-
-def check_text(s: dict) -> None:
-    t = templates.TEMPLATES[s["template_id"]]
-    assert render.render_id(s["template_id"], s["slots"]) == s["text"]
-    vals = [render.fmt(s["slots"][n], k or t.get("formats", {}).get(n, "text")) for n, k in render.slots_in(t["text"])]
-    allowed = set(DIGITS.findall(" ".join(vals)))
-    for d in DIGITS.findall(s["text"]):
-        assert d in allowed, (d, s["text"])
-    low = s["text"].lower() + " " + str(s.get("advice") or "").lower()
-    for w in BANNED:
-        assert w not in low, (w, s["text"])
-    assert "zero resistance" not in low.replace("not zero resistance", "")
 
 
 def clear_all():
@@ -88,7 +76,7 @@ def test_brief_shape(briefs):
         assert all(s["title"] for s in b["sections"])
         assert b["footer"] == brief.FOOTER
         assert set(B2_DETECTORS) <= set(b["detectors"]["ran"])
-        json.dumps(b)  # serialisable for the API
+        json.dumps(b, allow_nan=False)  # strict JSON: the API's response encoder rejects NaN
 
 
 def test_map_units_and_home_areas(ds, briefs):
@@ -157,6 +145,8 @@ def test_data_quality_always_has_a_completeness_line(briefs):
 
 
 def test_every_item_text_is_slot_rendered_and_worded(briefs):
+    """Every digit run in every item's text (all sections, resolved items too) comes from a slot, on all demo Mondays."""
+    assert list(briefs) == C.DEMO_MONDAYS
     for b in briefs.values():
         for it in items(b):
             check_text(it)
@@ -195,6 +185,7 @@ def test_demo_trimethoprim_crossing(briefs):
     assert p["kind"] == "policy_line" and p["status"] == "new" and p["priority"] == "P2"
     assert "20.4%" in p["text"] and "160 of 786" in p["text"] and "21 Jun 2026" in p["text"]
     assert p["advice"] == "Review the empirical UTI guidance" and p["slots"]["alternative"] == "pivmecillinam (local guide)"
+    assert "Alternative: pivmecillinam (local guide)." in p["text"]
     for w in ("PHC-N", "PHC-S"):
         u = next(u for u in b["map"]["units"] if u["ward"] == w)
         assert p["id"] in u["signal_ids"] and u["state"] in {"changed", "signal"}
@@ -267,6 +258,11 @@ def test_rule_and_window_params(ds, tmp_cache):
         brief.build_brief(ds, "2026-03-08", rule="first_ever")
     with pytest.raises(ValueError):
         brief.build_brief(ds, "2026-03-08", window="9w")
+    with pytest.raises(ValueError):
+        brief.signals_for(ds, "2026-03-08", ward="ICU", rule="first_ever")
+    with pytest.raises(ValueError):
+        brief.precompute(ds, ["2026-03-08"], rule="first_ever")
+    assert not list((tmp_cache / "signals").glob("*first_ever*"))  # a bad rule never caches a partial week
 
 
 def test_brief_is_strictly_as_of(ds, tmp_cache):
@@ -319,12 +315,16 @@ def test_precompute_weeks_arguments():
 
 # ---------------------------------------------------------------- performance
 
-def test_brief_cold_b2_detectors_under_three_seconds(ds, tmp_cache, monkeypatch):
-    monkeypatch.setattr(registry, "DETECTORS", list(B2_DETECTORS))
-    clear_all()
-    t = time.perf_counter()
-    brief.build_brief(ds, "2026-03-08")
-    assert time.perf_counter() - t <= 3.0
+def test_brief_cold_under_three_seconds(tmp_path):
+    """A fresh process (no in-memory state, empty disk cache) builds a full brief with every registered detector.
+    Loading the CSVs happens once at app start and is not part of the brief's budget."""
+    code = ("import time; from aei import brief, data; ds = data.load(); t = time.perf_counter(); "
+            "b = brief.build_brief(ds, '2026-03-08'); print(time.perf_counter() - t, len(b['detectors']['ran']))")
+    root = Path(__file__).resolve().parents[1]
+    out = subprocess.run([sys.executable, "-c", code], cwd=root, env={**os.environ, "AEI_CACHE_DIR": str(tmp_path)},
+                         capture_output=True, text=True, check=True, timeout=120)
+    seconds, n_ran = out.stdout.split()
+    assert int(n_ran) == len(registry.available()) and float(seconds) <= 3.0
 
 
 def test_brief_from_precomputed_cache_under_three_seconds(ds, tmp_cache):
