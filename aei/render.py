@@ -5,6 +5,7 @@ Formats:  pct0 -> "74%"   pct1 -> "20.4%"   ci0 -> "61-85" (a (lo, hi) pair of p
           text -> str(value) (names, ward labels; never a number)
 """
 import re
+
 import pandas as pd
 
 _SLOT = re.compile(r"\{([a-z_][a-z0-9_]*)(?::([a-z0-9_]+))?\}")

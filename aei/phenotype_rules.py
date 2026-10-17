@@ -2,7 +2,10 @@
 
 Order: intrinsic resistance (config.INTRINSIC) -> reported result -> MRSA implies beta-lactam R -> ESBL implies
 penicillin/cephalosporin R. Returns (result or None, reason). Reasons are shown on screen ("inferred from MRSA")."""
+import math
+
 import pandas as pd
+
 from . import config as C
 
 
@@ -11,7 +14,7 @@ def _get(row, key, default=None):
         v = row[key]
     except (KeyError, IndexError):
         return default
-    return default if v is None or (isinstance(v, float) and v != v) else v
+    return default if v is None or (isinstance(v, float) and math.isnan(v)) else v
 
 
 def effective_result(row, drug: str) -> tuple[str | None, str]:

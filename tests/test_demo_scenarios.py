@@ -1,6 +1,8 @@
 """The demo seeds and scenarios quote real numbers from the synthetic data; keep them true."""
 import pandas as pd
-from aei import config as C, data
+
+from aei import config as C
+from aei import data
 from aei.phenotype_rules import effective_column, effective_result
 
 

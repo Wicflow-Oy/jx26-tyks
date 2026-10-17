@@ -8,9 +8,11 @@ Isolate table columns (one row per isolate; see CONTRACTS.md section 1):
   AMP..CLI ("S"/"R"/NaN), first_year (first per patient x organism x specimen x calendar year),
   first_30d (no same patient x organism x specimen isolate in the previous 30 days)
 """
-from functools import lru_cache
 from dataclasses import dataclass
+from functools import lru_cache
+
 import pandas as pd
+
 from . import config as C
 
 
