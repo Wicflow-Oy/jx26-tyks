@@ -1,541 +1,343 @@
-"""Demo state in SQLite: approved alerts, heads-up drafts, order feedback, issued CDS cards and an append-only audit log.
+"""Demo state in SQLite (`config.STATE_DB`): approved alerts, heads-up drafts, CDS Hooks feedback, order-card feedback
+and an append-only audit log. CONTRACTS.md sections 7, 7b and 10.
 
-Path: `config.STATE_DB` (ephemeral `/tmp/state.sqlite` in the container), overridable with `set_path()` for tests.
-Dates are ISO strings (`YYYY-MM-DD`) so they compare lexicographically.
+Sessions: every write carries the browser's random `X-Demo-Session` id, and reads return that session's rows plus the
+demo seeds, which every session sees, so judges never see each other's clicks. Every write also appends one audit row,
+which makes the audit log the per-session write counter behind `MAX_WRITES_PER_SESSION`.
 
-**Sessions** (CONTRACTS.md section 10): every row a visitor creates carries the browser's random `X-Demo-Session` id,
-and reads return only that session's rows plus the seeds (`config.DEMO_ALERT_SEEDS`), which every session sees.
-Revoking a seed only hides it for the revoking session. Each session may write at most `MAX_WRITES_PER_SESSION` rows.
+Replay: an alert approved from the brief dated Monday `as_of + 1` is stored with `approved_on = as_of + 1`. At a replay
+date it is active only if it was approved by that Monday, has not expired and was not revoked by then, so a later
+approval or revocation never changes an earlier date.
 
-**Replay** (section 2): an alert approved from the brief dated Monday `as_of + 1` has `approved_on = as_of + 1`; it is
-visible at a replay date only if `approved_on <= as_of + 1 <= expires_on` and not revoked by then.
-
-No user id, patient id, IP address or free-text comment is ever stored.
+No user id, patient id or IP address is stored. Free text is limited to alert messages and heads-up drafts.
 """
-import dataclasses
 import datetime as dt
 import json
-import math
 import re
 import sqlite3
-import threading
 import uuid
-from contextlib import contextmanager
+from collections import Counter
+from collections.abc import Sequence
+from contextlib import closing, contextmanager
 from pathlib import Path
-
-import numpy as np
-import pandas as pd
 
 from . import config as C
 
-ANONYMOUS = "anonymous"  # requests without a session header (e.g. a CDS client) share this bucket
-SEED_SESSION = "seed"
-SESSION_RE = re.compile(r"[A-Za-z0-9_-]{8,64}")
+ANONYMOUS = "anonymous"  # requests without a session header (a CDS Hooks client) share this bucket
+SEED = "seed"
 ORDER_OUTCOMES = ("shown", "keep", "change", "details")
-_TABLES = ("alerts", "revocations", "heads_up", "feedback", "cards", "audit", "session_writes")
+CARD_STATES = ("info", "warning")  # only displayed cards are logged
+CDS_OUTCOMES = {"accepted": "change", "overridden": "keep"}  # CDS Hooks feedback outcome -> order-card outcome
+NOT_SENT = "not sent (demo)"
+_SESSION = re.compile(r"[A-Za-z0-9_-]{8,64}")
+_CODE = re.compile(r"[A-Za-z0-9_.:-]{1,64}")  # card keys, source ids, reason codes, suggestion ids
+_TABLES = ("alerts", "revocations", "heads_up", "feedback", "order_feedback", "audit")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS alerts (
-    id TEXT PRIMARY KEY, session TEXT NOT NULL, signal_id TEXT, as_of TEXT NOT NULL, approved_on TEXT NOT NULL,
-    wards TEXT NOT NULL, drugs TEXT NOT NULL, organism TEXT, specimen TEXT, message TEXT NOT NULL,
-    approved_by_role TEXT NOT NULL, expires_on TEXT NOT NULL, seed INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+    id TEXT PRIMARY KEY, session TEXT NOT NULL, seed INTEGER NOT NULL, signal_id TEXT, approved_on TEXT NOT NULL,
+    expires_on TEXT NOT NULL, wards TEXT NOT NULL, drugs TEXT NOT NULL, organism TEXT, specimen TEXT,
+    message TEXT NOT NULL, approved_by_role TEXT NOT NULL);
+-- A revocation belongs to the session that made it, so revoking a shared seed hides it for that session only.
 CREATE TABLE IF NOT EXISTS revocations (
-    alert_id TEXT NOT NULL, session TEXT NOT NULL, revoked_on TEXT NOT NULL, by_role TEXT, created_at TEXT NOT NULL,
-    PRIMARY KEY (alert_id, session));
+    alert_id TEXT NOT NULL, session TEXT NOT NULL, revoked_on TEXT NOT NULL, PRIMARY KEY (alert_id, session));
 CREATE TABLE IF NOT EXISTS heads_up (
     id TEXT PRIMARY KEY, session TEXT NOT NULL, signal_id TEXT NOT NULL, as_of TEXT NOT NULL, audience TEXT NOT NULL,
-    to_units TEXT NOT NULL, language TEXT NOT NULL, text TEXT NOT NULL, provider TEXT, validated INTEGER,
-    fallback_reason TEXT, status TEXT NOT NULL DEFAULT 'draft', approved_by_role TEXT, approved_at TEXT,
-    created_at TEXT NOT NULL);
--- Cards issued by the CDS Hooks service, so feedback (which carries only the card uuid) can name its source.
-CREATE TABLE IF NOT EXISTS cards (
-    card_uuid TEXT PRIMARY KEY, source_kind TEXT, source_id TEXT, state TEXT, unit TEXT, drug TEXT, indication TEXT,
-    as_of TEXT, service_id TEXT, first_issued_at TEXT NOT NULL);
--- Order-card outcomes from the doctor's view and from CDS Hooks feedback (accepted -> change, overridden -> keep).
+    text TEXT NOT NULL, provider TEXT, status TEXT NOT NULL, approved_by_role TEXT);
 CREATE TABLE IF NOT EXISTS feedback (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, session TEXT NOT NULL, channel TEXT NOT NULL, card_key TEXT NOT NULL,
-    source_kind TEXT, source_id TEXT, state TEXT, outcome TEXT NOT NULL, reason TEXT, changed_to TEXT,
-    unit TEXT, drug TEXT, indication TEXT, as_of TEXT, created_at TEXT NOT NULL);
-CREATE INDEX IF NOT EXISTS feedback_session ON feedback (session, card_key, outcome);
-CREATE TABLE IF NOT EXISTS session_writes (session TEXT PRIMARY KEY, writes INTEGER NOT NULL, first_at TEXT NOT NULL);
+    id INTEGER PRIMARY KEY, session TEXT NOT NULL, service_id TEXT NOT NULL, card_uuid TEXT NOT NULL, source_id TEXT,
+    as_of TEXT, outcome TEXT NOT NULL, override_reason TEXT, accepted_suggestions TEXT NOT NULL, at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS order_feedback (
+    id INTEGER PRIMARY KEY, session TEXT NOT NULL, card_key TEXT NOT NULL, source_id TEXT, state TEXT NOT NULL,
+    outcome TEXT NOT NULL, reason TEXT, changed_to TEXT, as_of TEXT NOT NULL, at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS audit (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, session TEXT, event TEXT NOT NULL, entity TEXT,
-    entity_id TEXT, detail TEXT NOT NULL);
+    id INTEGER PRIMARY KEY, at TEXT NOT NULL, session TEXT NOT NULL, event TEXT NOT NULL, ref TEXT);
+CREATE INDEX IF NOT EXISTS audit_by_session ON audit (session);
 CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit
-    BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+    BEGIN SELECT RAISE(ABORT, 'the audit log is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit
-    BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+    BEGIN SELECT RAISE(ABORT, 'the audit log is append-only'); END;
 """
 
-_path_override: Path | None = None
-_initialised: set[str] = set()
-_seeded: set[str] = set()
-_lock = threading.RLock()
+
+class NotFound(LookupError):
+    """No such row for this session (the API answers 404)."""
 
 
-class NotFound(KeyError):
-    pass
+class WriteLimitReached(RuntimeError):
+    """The session used up `MAX_WRITES_PER_SESSION` (the API answers 429 with this message)."""
+
+    def __init__(self):
+        super().__init__(f"This demo session reached its limit of {C.MAX_WRITES_PER_SESSION} changes. "
+                         "Open the demo in a new tab to start a fresh session.")
 
 
-class Conflict(ValueError):
-    pass
-
-
-class WriteCapExceeded(RuntimeError):
-    """The session reached `MAX_WRITES_PER_SESSION` (the API answers 429 with a friendly message)."""
-
-
-# --------------------------------------------------------------------------- paths and connections
-def db_path() -> Path:
-    return _path_override if _path_override is not None else Path(C.STATE_DB)
-
-
-def set_path(path) -> None:
-    """Point the store at another file (tests use tmp_path). `None` restores `config.STATE_DB`."""
-    global _path_override
-    _path_override = None if path is None else Path(path)
-
-
-def _key() -> str:
-    return str(db_path().resolve())
+# --------------------------------------------------------------------------- connections, sessions, audit
+def _connect() -> sqlite3.Connection:
+    path = Path(C.STATE_DB)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(path, timeout=10, isolation_level=None)
+    con.row_factory = sqlite3.Row
+    con.executescript(_SCHEMA)
+    return con
 
 
 @contextmanager
-def _conn():
-    path = db_path()
-    with _lock:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        con = sqlite3.connect(path, timeout=10)
-        con.row_factory = sqlite3.Row
+def _transaction():
+    """BEGIN IMMEDIATE takes the write lock up front, so a session's write-cap check and its insert cannot interleave
+    with another request (FastAPI runs sync endpoints on a thread pool)."""
+    with closing(_connect()) as con:
+        con.execute("BEGIN IMMEDIATE")
         try:
-            if _key() not in _initialised or not _has_schema(con):
-                con.executescript(_SCHEMA)
-                _initialised.add(_key())
             yield con
-            con.commit()
         except BaseException:
-            con.rollback()
+            con.execute("ROLLBACK")
             raise
-        finally:
-            con.close()
+        con.execute("COMMIT")
 
 
-def _has_schema(con) -> bool:
-    return con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='alerts'").fetchone() is not None
-
-
-def init() -> Path:
-    """Create the tables if needed and return the database path."""
-    with _conn():
-        pass
-    return db_path()
+def _write(con, session: str, event: str, ref: str) -> None:
+    """Enforce the session's write cap, then append the audit row that counts this write."""
+    if session != SEED:
+        used = con.execute("SELECT COUNT(*) FROM audit WHERE session = ?", (session,)).fetchone()[0]
+        if used >= C.MAX_WRITES_PER_SESSION:
+            raise WriteLimitReached()
+    con.execute("INSERT INTO audit (at, session, event, ref) VALUES (?, ?, ?, ?)", (_now(), session, event, ref))
 
 
 def reset() -> None:
-    """Drop this module's tables (the audit log included) and recreate them. Tests and demo resets only.
-    Other modules' tables in the same file (the narrator's spend counter) are left alone."""
-    path = db_path()
-    with _lock:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        con = sqlite3.connect(path, timeout=10)
-        try:
-            for t in _TABLES:
-                con.execute(f"DROP TABLE IF EXISTS {t}")
-            con.executescript(_SCHEMA)
-            con.commit()
-        finally:
-            con.close()
-        _initialised.add(_key())
-        _seeded.discard(_key())
-    audit("store_reset")
+    """Drop and recreate this module's tables (tests and demo resets). Other tables in the same file, such as the
+    narrator's `llm_spend`, are left alone."""
+    with closing(_connect()) as con:
+        con.executescript("".join(f"DROP TABLE IF EXISTS {t};" for t in _TABLES) + _SCHEMA)
 
 
-def session_id(raw: str | None) -> str:
-    """Validate a session header value. Missing -> the shared anonymous bucket; malformed -> ValueError."""
-    if raw is None or raw == "":
+def session_id(header: str | None) -> str:
+    """The validated `X-Demo-Session` header; a missing header falls back to the shared anonymous bucket."""
+    if not header:
         return ANONYMOUS
-    if not SESSION_RE.fullmatch(raw):
-        raise ValueError("session id must be 8-64 letters, digits, '-' or '_'")
-    return raw
+    if not _SESSION.fullmatch(header):
+        raise ValueError("X-Demo-Session must be 8-64 letters, digits, '-' or '_'")
+    return header
 
 
-def _count_write(con, session: str) -> None:
-    if session == SEED_SESSION:
-        return
-    r = con.execute("SELECT writes FROM session_writes WHERE session = ?", (session,)).fetchone()
-    writes = 0 if r is None else r["writes"]
-    if writes >= C.MAX_WRITES_PER_SESSION:
-        raise WriteCapExceeded(session)
-    con.execute("INSERT INTO session_writes (session, writes, first_at) VALUES (?, 1, ?) "
-                "ON CONFLICT(session) DO UPDATE SET writes = writes + 1", (session, _now()))
-
-
-def writes_used(session: str) -> int:
-    with _conn() as con:
-        r = con.execute("SELECT writes FROM session_writes WHERE session = ?", (session,)).fetchone()
-    return 0 if r is None else int(r["writes"])
-
-
-# --------------------------------------------------------------------------- helpers
-def to_jsonable(o):
-    """Make numpy/pandas values JSON-safe: NaN -> None, numpy scalars -> Python, dates -> ISO strings."""
-    if o is None or isinstance(o, (str, bool)):
-        return o
-    if o is pd.NaT or o is pd.NA:
-        return None
-    if isinstance(o, dict):
-        return {str(k): to_jsonable(v) for k, v in o.items()}
-    if isinstance(o, (set, frozenset)):
-        return [to_jsonable(v) for v in sorted(o, key=str)]
-    if isinstance(o, (list, tuple)):
-        return [to_jsonable(v) for v in o]
-    if isinstance(o, np.bool_):
-        return bool(o)
-    if isinstance(o, (int, np.integer)):
-        return int(o)
-    if isinstance(o, (float, np.floating)):
-        f = float(o)
-        return f if math.isfinite(f) else None
-    if isinstance(o, pd.Timestamp):
-        return o.date().isoformat() if o == o.normalize() else o.isoformat()
-    if isinstance(o, (dt.datetime, dt.date)):
-        return o.isoformat()
-    if isinstance(o, np.ndarray):
-        return to_jsonable(o.tolist())
-    if isinstance(o, pd.DataFrame):
-        return to_jsonable(o.to_dict(orient="records"))
-    if isinstance(o, pd.Series):
-        return to_jsonable(o.to_dict())
-    if dataclasses.is_dataclass(o) and not isinstance(o, type):
-        return to_jsonable(dataclasses.asdict(o))
-    try:
-        if pd.isna(o):
-            return None
-    except (TypeError, ValueError):
-        pass
-    return str(o)
-
-
+# --------------------------------------------------------------------------- small helpers
 def _now() -> str:
     return dt.datetime.now(dt.UTC).replace(microsecond=0).isoformat()
 
 
-def _day(x) -> str:
-    return pd.Timestamp(str(x)[:10]).date().isoformat()
+def _day(value, days: int = 0) -> str:
+    return (dt.date.fromisoformat(str(value)[:10]) + dt.timedelta(days=days)).isoformat()
 
 
 def _monday(as_of) -> str:
-    return (pd.Timestamp(str(as_of)[:10]) + pd.Timedelta(days=1)).date().isoformat()
+    """The brief's date: the day after the last data day."""
+    return _day(as_of, 1)
 
 
-def _role_key(role: str | None) -> str:
-    """Accept a role key ("infection_control") or its label ("Infection control")."""
-    if role in C.ROLES:
-        return role
-    return next((k for k, v in C.ROLES.items() if v == role), role or "infection_control")
+def _require(ok: bool, message: str) -> None:
+    if not ok:
+        raise ValueError(message)
 
 
-def audit(event: str, entity: str | None = None, entity_id: str | None = None, detail: dict | None = None,
-          session: str | None = None) -> None:
-    """Append one audit row. Callers never pass user, patient or IP identifiers."""
-    with _conn() as con:
-        con.execute("INSERT INTO audit (ts, session, event, entity, entity_id, detail) VALUES (?, ?, ?, ?, ?, ?)",
-                    (_now(), session, event, entity, entity_id, json.dumps(to_jsonable(detail or {}), sort_keys=True)))
+def _role(role: str) -> str:
+    """Accept a role key ("infection_control") or its label; store the label."""
+    label = C.ROLES.get(role, role)
+    _require(label in C.ROLES.values(), f"unknown role {role!r}")
+    return label
 
 
-def audit_log(limit: int = 200, session: str | None = None) -> list[dict]:
-    q, args = "SELECT * FROM audit", []
-    if session is not None:
-        q, args = q + " WHERE session = ?", [session]
-    with _conn() as con:
-        rows = con.execute(q + " ORDER BY id DESC LIMIT ?", (*args, int(limit))).fetchall()
-    return [{**dict(r), "detail": json.loads(r["detail"])} for r in rows]
+def _code(value: str | None, name: str) -> str | None:
+    _require(value is None or bool(_CODE.fullmatch(str(value))), f"{name} must be a short code")
+    return value
 
 
 # --------------------------------------------------------------------------- alerts
-def _alert_row(r: sqlite3.Row, revoked: dict | None = None) -> dict:
-    d = dict(r)
-    d["wards"], d["drugs"] = json.loads(d["wards"]), json.loads(d["drugs"])
-    d["seed"] = bool(d["seed"])
-    d["approved_by"] = C.ROLES.get(d["approved_by_role"], d["approved_by_role"])
-    d["status"] = "revoked" if revoked else "approved"
-    d["revoked_on"] = revoked["revoked_on"] if revoked else None
-    return d
-
-
-def demo_seed_alerts() -> list[dict]:
-    """`config.DEMO_ALERT_SEEDS` as store-shaped alert dicts (no database needed; tests use these directly)."""
-    out = []
-    for s in C.DEMO_ALERT_SEEDS:
-        approved = _day(s["approved_on"])
-        out.append({"id": s["id"], "session": SEED_SESSION, "signal_id": s.get("signal_id"),
-                    "as_of": (pd.Timestamp(approved) - pd.Timedelta(days=1)).date().isoformat(), "approved_on": approved,
-                    "wards": list(s["wards"]), "drugs": list(s.get("drugs") or []), "organism": s.get("organism"),
-                    "specimen": s.get("specimen"), "message": s["message"],
-                    "approved_by_role": _role_key(s.get("approved_by_role")),
-                    "approved_by": C.ROLES.get(_role_key(s.get("approved_by_role")), s.get("approved_by_role")),
-                    "expires_on": _day(s["expires_on"]), "status": "approved", "revoked_on": None, "seed": True})
-    return out
-
-
-def create_alert(signal_id: str | None, as_of, wards: list[str], drugs: list[str], message: str,
-                 approved_by_role: str, expires_on=None, *, session: str = ANONYMOUS, organism: str | None = None,
-                 specimen: str | None = None, seed: bool = False, alert_id: str | None = None) -> dict:
-    """Store an approved alert. `as_of` is the brief's data day; the approval is dated the Monday after it."""
-    approved_on = _monday(as_of)
-    if expires_on is None:
-        expires_on = (pd.Timestamp(approved_on) + pd.Timedelta(days=C.ALERT_DEFAULT_EXPIRY_DAYS)).date().isoformat()
-    aid = alert_id or f"alr-{uuid.uuid4().hex[:12]}"
-    role = _role_key(approved_by_role)
-    with _conn() as con:
-        _count_write(con, session)
-        con.execute("INSERT INTO alerts (id, session, signal_id, as_of, approved_on, wards, drugs, organism, specimen, "
-                    "message, approved_by_role, expires_on, seed, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (aid, session, signal_id, _day(as_of), approved_on, json.dumps(list(wards)), json.dumps(list(drugs)),
-                     organism, specimen, message, role, _day(expires_on), int(seed), _now()))
-    audit("alert_approved", "alert", aid, {"signal_id": signal_id, "wards": list(wards), "drugs": list(drugs),
-                                            "approved_on": approved_on, "expires_on": _day(expires_on), "role": role,
-                                            "seed": seed}, session=session)
-    return get_alert(aid, session)
-
-
-def seed_demo() -> list[dict]:
-    """Insert every `config.DEMO_ALERT_SEEDS` alert that is missing (idempotent). Seeds are visible to all sessions."""
-    with _conn() as con:
-        have = {r["id"] for r in con.execute("SELECT id FROM alerts WHERE seed = 1")}
-    for s in demo_seed_alerts():
-        if s["id"] not in have:
-            create_alert(s["signal_id"], s["as_of"], s["wards"], s["drugs"], s["message"], s["approved_by_role"],
-                         s["expires_on"], session=SEED_SESSION, organism=s["organism"], specimen=s["specimen"],
-                         seed=True, alert_id=s["id"])
-    _seeded.add(_key())
-    return [get_alert(s["id"]) for s in demo_seed_alerts()]
-
-
-def ensure_seeded() -> None:
-    """Run `seed_demo()` once per database file per process (the container's state DB is ephemeral)."""
-    if _key() not in _seeded:
-        seed_demo()
-
-
-def link_signal(alert_id: str, signal_id: str) -> None:
-    """Attach a signal id to an alert that has none yet (seeds are created before any signal exists)."""
-    with _conn() as con:
-        changed = con.execute("UPDATE alerts SET signal_id = ? WHERE id = ? AND signal_id IS NULL",
-                              (signal_id, alert_id)).rowcount
-    if changed:
-        audit("alert_linked", "alert", alert_id, {"signal_id": signal_id})
-
-
-def _revocations(con, session: str) -> dict[str, dict]:
-    return {r["alert_id"]: dict(r) for r in con.execute("SELECT * FROM revocations WHERE session = ?", (session,))}
-
-
-def get_alert(alert_id: str, session: str | None = None) -> dict:
-    """One alert as `session` sees it (None = owner view, no session filter)."""
-    with _conn() as con:
-        r = con.execute("SELECT * FROM alerts WHERE id = ?", (alert_id,)).fetchone()
-        if r is None or (session is not None and not r["seed"] and r["session"] != session):
-            raise NotFound(alert_id)
-        rev = _revocations(con, session if session is not None else r["session"]).get(alert_id)
-    return _alert_row(r, rev)
-
-
-def all_alerts(session: str | None = None) -> list[dict]:
-    """Seeds plus the session's own alerts (every alert when session is None)."""
-    with _conn() as con:
-        if session is None:
-            rows, revs = con.execute("SELECT * FROM alerts ORDER BY approved_on, id").fetchall(), {}
-        else:
-            rows = con.execute("SELECT * FROM alerts WHERE seed = 1 OR session = ? ORDER BY approved_on, id",
-                               (session,)).fetchall()
-            revs = _revocations(con, session)
-    return [_alert_row(r, revs.get(r["id"])) for r in rows]
-
-
-def visible_alerts(as_of, session: str | None = None) -> list[dict]:
-    """Every alert approved on or before `as_of + 1` (active or not), each with an `active` flag for that date."""
-    from .cds import alert_active
+def is_active(alert: dict, as_of) -> bool:
+    """Active at the brief's Monday (`as_of + 1`): approved by then, not expired, and not revoked by then."""
     monday = _monday(as_of)
-    return [{**a, "active": alert_active(a, as_of)} for a in all_alerts(session) if a["approved_on"] <= monday]
+    revoked = alert.get("revoked_on")
+    return alert["approved_on"] <= monday <= alert["expires_on"] and (revoked is None or revoked > monday)
 
 
-def active_alerts(as_of, unit: str | None = None, session: str | None = None) -> list[dict]:
-    """Alerts active at `as_of + 1` for this session, optionally only those covering `unit`."""
-    return [a for a in visible_alerts(as_of, session) if a["active"] and (unit is None or unit in a["wards"])]
+def seed_demo() -> None:
+    """Insert `config.DEMO_ALERT_SEEDS` if missing (idempotent). Seeds belong to no session; every session sees them."""
+    with _transaction() as con:
+        for s in C.DEMO_ALERT_SEEDS:
+            added = con.execute(
+                "INSERT OR IGNORE INTO alerts VALUES (?, ?, 1, NULL, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (s["id"], SEED, _day(s["approved_on"]), _day(s["expires_on"]), json.dumps(s["wards"]),
+                 json.dumps(s["drugs"]), s["organism"], s["specimen"], s["message"], _role(s["approved_by_role"]))).rowcount
+            if added:
+                _write(con, SEED, "alert_seeded", s["id"])
 
 
-def alerts_for_signal(signal_id: str, as_of, session: str | None = None) -> list[dict]:
-    return [a for a in visible_alerts(as_of, session) if a["signal_id"] == signal_id]
+def approve_alert(session: str, *, signal_id: str | None, as_of, wards: list[str], drugs: list[str], message: str,
+                  approved_by_role: str = "infection_control", expires_on=None, organism: str | None = None,
+                  specimen: str | None = None) -> dict:
+    """Approve an alert from the brief dated `as_of + 1`. It expires after `ALERT_DEFAULT_EXPIRY_DAYS` unless given."""
+    approved_on = _monday(as_of)
+    expires_on = _day(expires_on) if expires_on else _day(approved_on, C.ALERT_DEFAULT_EXPIRY_DAYS)
+    _require(bool(wards) and set(wards) <= set(C.WARD_LABELS), "wards must be known ward codes")
+    _require(set(drugs) <= set(C.DRUGS), "drugs must be known drug codes")
+    _require(bool(message.strip()), "message is empty")
+    _require(expires_on >= approved_on, "expires_on is before the approval date")
+    alert_id = f"alr-{uuid.uuid4().hex[:12]}"
+    with _transaction() as con:
+        _write(con, session, "alert_approved", alert_id)
+        con.execute("INSERT INTO alerts VALUES (?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (alert_id, session, _code(signal_id, "signal_id"), approved_on, expires_on, json.dumps(list(wards)),
+                     json.dumps(list(drugs)), organism, specimen, message.strip(), _role(approved_by_role)))
+    return get_alert(session, alert_id)
 
 
-def revoke_alert(alert_id: str, as_of=None, by_role: str = "infection_control", *, session: str = ANONYMOUS) -> dict:
-    """Revoke for this session from `as_of + 1` onwards; without `as_of`, at every replay date."""
-    a = get_alert(alert_id, session)
-    if a["status"] == "revoked":
-        raise Conflict(f"alert {alert_id} is already revoked")
-    revoked_on = _monday(as_of) if as_of is not None else a["approved_on"]
-    with _conn() as con:
-        _count_write(con, session)
-        con.execute("INSERT INTO revocations (alert_id, session, revoked_on, by_role, created_at) VALUES (?,?,?,?,?)",
-                    (alert_id, session, revoked_on, _role_key(by_role), _now()))
-    audit("alert_revoked", "alert", alert_id, {"revoked_on": revoked_on, "role": _role_key(by_role)}, session=session)
-    return get_alert(alert_id, session)
+_ALERTS_SQL = """SELECT a.*, r.revoked_on FROM alerts a
+    LEFT JOIN revocations r ON r.alert_id = a.id AND r.session = :session
+    WHERE (a.seed = 1 OR a.session = :session)"""
+
+
+def _alert(row: sqlite3.Row) -> dict:
+    a = dict(row)
+    a.update(wards=json.loads(a["wards"]), drugs=json.loads(a["drugs"]), seed=bool(a["seed"]))
+    del a["session"]
+    return a
+
+
+def alerts(session: str, as_of=None) -> list[dict]:
+    """The seeds plus this session's alerts, oldest first; with `as_of`, only those active at `as_of + 1`."""
+    with closing(_connect()) as con:
+        rows = con.execute(_ALERTS_SQL + " ORDER BY a.approved_on, a.id", {"session": session}).fetchall()
+    found = [_alert(r) for r in rows]
+    return found if as_of is None else [a for a in found if is_active(a, as_of)]
+
+
+def get_alert(session: str, alert_id: str) -> dict:
+    with closing(_connect()) as con:
+        row = con.execute(_ALERTS_SQL + " AND a.id = :id", {"session": session, "id": alert_id}).fetchone()
+    if row is None:
+        raise NotFound(f"alert {alert_id} not found")
+    return _alert(row)
+
+
+def revoke_alert(session: str, alert_id: str, as_of) -> dict:
+    """Revoke from the brief dated `as_of + 1` on, for this session only. Earlier replay dates still show the alert."""
+    if get_alert(session, alert_id)["revoked_on"] is None:
+        with _transaction() as con:
+            _write(con, session, "alert_revoked", alert_id)
+            con.execute("INSERT OR IGNORE INTO revocations VALUES (?, ?, ?)", (alert_id, session, _monday(as_of)))
+    return get_alert(session, alert_id)
 
 
 # --------------------------------------------------------------------------- heads-up drafts (never sent)
-def _hu_row(r: sqlite3.Row) -> dict:
-    d = dict(r)
-    d["to_units"] = json.loads(d["to_units"])
-    d["validated"] = None if d["validated"] is None else bool(d["validated"])
-    return d
+def _heads_up(row: sqlite3.Row) -> dict:
+    h = dict(row)
+    del h["session"]
+    return {**h, "delivery": NOT_SENT}
 
 
-def create_heads_up(signal_id: str, as_of, text: str, *, session: str = ANONYMOUS, audience: str = "ed",
-                    to_units=("ED",), language: str = "en", provider: str | None = None, validated: bool | None = None,
-                    fallback_reason: str | None = None) -> dict:
-    hid = f"hu-{uuid.uuid4().hex[:12]}"
-    with _conn() as con:
-        _count_write(con, session)
-        con.execute("INSERT INTO heads_up (id, session, signal_id, as_of, audience, to_units, language, text, provider, "
-                    "validated, fallback_reason, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'draft', ?)",
-                    (hid, session, signal_id, _day(as_of), audience, json.dumps(list(to_units)), language, text, provider,
-                     None if validated is None else int(bool(validated)), fallback_reason, _now()))
-    audit("heads_up_drafted", "heads_up", hid, {"signal_id": signal_id, "audience": audience, "provider": provider,
-                                                "validated": validated, "fallback_reason": fallback_reason},
-          session=session)
-    return get_heads_up(hid, session)
+def draft_heads_up(session: str, *, signal_id: str, as_of, text: str, audience: str = "ed",
+                   provider: str | None = None) -> dict:
+    """Store a narrated heads-up as a draft for the brief dated `as_of + 1`."""
+    _require(bool(text.strip()), "text is empty")
+    heads_up_id = f"hu-{uuid.uuid4().hex[:12]}"
+    with _transaction() as con:
+        _write(con, session, "heads_up_drafted", heads_up_id)
+        con.execute("INSERT INTO heads_up VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', NULL)",
+                    (heads_up_id, session, _code(signal_id, "signal_id"), _day(as_of), _code(audience, "audience"),
+                     text.strip(), provider))
+    return get_heads_up(session, heads_up_id)
 
 
-def get_heads_up(hid: str, session: str | None = None) -> dict:
-    with _conn() as con:
-        r = con.execute("SELECT * FROM heads_up WHERE id = ?", (hid,)).fetchone()
-    if r is None or (session is not None and r["session"] != session):
-        raise NotFound(hid)
-    return _hu_row(r)
+def get_heads_up(session: str, heads_up_id: str) -> dict:
+    with closing(_connect()) as con:
+        row = con.execute("SELECT * FROM heads_up WHERE id = ? AND session = ?", (heads_up_id, session)).fetchone()
+    if row is None:
+        raise NotFound(f"heads-up {heads_up_id} not found")
+    return _heads_up(row)
 
 
-def approve_heads_up(hid: str, by_role: str = "infection_control", *, session: str = ANONYMOUS) -> dict:
+def approve_heads_up(session: str, heads_up_id: str, approved_by_role: str = "infection_control") -> dict:
     """Mark a draft approved (idempotent). Nothing is ever sent from this demo."""
-    h = get_heads_up(hid, session)
-    if h["status"] == "approved":
-        return h
-    with _conn() as con:
-        _count_write(con, session)
-        con.execute("UPDATE heads_up SET status = 'approved', approved_by_role = ?, approved_at = ? WHERE id = ?",
-                    (_role_key(by_role), _now(), hid))
-    audit("heads_up_approved", "heads_up", hid, {"role": _role_key(by_role), "delivery": "not sent (demo)"},
-          session=session)
-    return get_heads_up(hid, session)
+    if get_heads_up(session, heads_up_id)["status"] == "draft":
+        with _transaction() as con:
+            _write(con, session, "heads_up_approved", heads_up_id)
+            con.execute("UPDATE heads_up SET status = 'approved', approved_by_role = ? WHERE id = ?",
+                        (_role(approved_by_role), heads_up_id))
+    return get_heads_up(session, heads_up_id)
 
 
-def heads_ups(signal_id: str | None = None, as_of=None, session: str | None = None) -> list[dict]:
-    """The session's heads-ups drafted for a brief dated on or before `as_of` (strict as-of), newest first."""
-    q, args = "SELECT * FROM heads_up WHERE 1=1", []
-    if session is not None:
-        q, args = q + " AND session = ?", [*args, session]
+def heads_ups(session: str, as_of, signal_id: str | None = None) -> list[dict]:
+    """This session's heads-ups drafted for briefs up to `as_of` (strict as-of), newest first."""
+    query, args = "SELECT * FROM heads_up WHERE session = ? AND as_of <= ?", [session, _day(as_of)]
     if signal_id is not None:
-        q, args = q + " AND signal_id = ?", [*args, signal_id]
-    if as_of is not None:
-        q, args = q + " AND as_of <= ?", [*args, _day(as_of)]
-    with _conn() as con:
-        rows = con.execute(q + " ORDER BY as_of DESC, created_at DESC, id DESC", args).fetchall()
-    return [_hu_row(r) for r in rows]
+        query, args = query + " AND signal_id = ?", [*args, signal_id]
+    with closing(_connect()) as con:
+        rows = con.execute(query + " ORDER BY as_of DESC, rowid DESC", args).fetchall()
+    return [_heads_up(r) for r in rows]
 
 
-# --------------------------------------------------------------------------- CDS cards and order feedback
-def register_cards(cards: list[dict], *, service_id: str | None, as_of, unit: str | None,
-                   indication: str | None = None) -> None:
-    """Remember which source each issued CDS card came from. Stores no user, patient or encounter id."""
-    rows = []
-    for c in cards:
-        ext = c.get("extension") or {}
-        src = next((v for k, v in ext.items() if k.endswith(".source") and isinstance(v, dict)), {})
-        state = next((v for k, v in ext.items() if k.endswith(".state")), None)
-        rows.append((c["uuid"], src.get("kind"), src.get("id"), state, unit, src.get("drug"), indication, _day(as_of),
-                     service_id, _now()))
-    if rows:
-        with _conn() as con:
-            con.executemany("INSERT OR IGNORE INTO cards (card_uuid, source_kind, source_id, state, unit, drug, indication, "
-                            "as_of, service_id, first_issued_at) VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+# --------------------------------------------------------------------------- order-card and CDS Hooks feedback
+def log_order_feedback(session: str, *, card_key: str, source_id: str | None, state: str, outcome: str, as_of,
+                       reason: str | None = None, changed_to: str | None = None) -> dict:
+    """One order-card event from the doctor's view. `shown` is logged once per session and card, i.e. once per order
+    draft; a repeat is not stored and returns `logged: False`. Keep reasons come from `config.KEEP_REASONS` only."""
+    _require(outcome in ORDER_OUTCOMES, f"outcome must be one of {ORDER_OUTCOMES}")
+    _require(state in CARD_STATES, f"state must be one of {CARD_STATES}")
+    _require(reason is None or (outcome == "keep" and reason in C.KEEP_REASONS), "reason must be a listed keep reason")
+    _require(changed_to is None or (outcome == "change" and changed_to in C.DRUGS), "changed_to must be a drug code")
+    _code(card_key, "card_key")
+    _code(source_id, "source_id")
+    with _transaction() as con:
+        if outcome == "shown" and con.execute("SELECT 1 FROM order_feedback WHERE session = ? AND card_key = ? AND "
+                                              "outcome = 'shown'", (session, card_key)).fetchone():
+            return {"card_key": card_key, "outcome": outcome, "logged": False}
+        _write(con, session, f"order_{outcome}", card_key)
+        con.execute("INSERT INTO order_feedback (session, card_key, source_id, state, outcome, reason, changed_to, "
+                    "as_of, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (session, card_key, source_id, state, outcome, reason, changed_to, _day(as_of), _now()))
+    return {"card_key": card_key, "outcome": outcome, "logged": True}
 
 
-def card_info(card_uuid: str) -> dict | None:
-    with _conn() as con:
-        r = con.execute("SELECT * FROM cards WHERE card_uuid = ?", (card_uuid,)).fetchone()
-    return None if r is None else dict(r)
+def log_cds_feedback(session: str, *, service_id: str, card_uuid: str, outcome: str,
+                     override_reason: str | None = None, accepted_suggestions: Sequence[str] = ()) -> dict:
+    """One CDS Hooks feedback item (outcome accepted | overridden). A feedback call carries only the card uuid, so the
+    card's source and date are read from its `shown` row: the CDS endpoint logs every card it returns as shown.
+    Feedback on a card never shown here has no date and stays out of the summary. Only the override reason code is
+    stored, never the user's comment."""
+    _require(outcome in CDS_OUTCOMES, f"outcome must be one of {tuple(CDS_OUTCOMES)}")
+    _code(service_id, "service_id")
+    _code(card_uuid, "card uuid")
+    _code(override_reason, "override reason code")
+    _require(len(accepted_suggestions) <= 10, "too many accepted suggestions")
+    for s in accepted_suggestions:
+        _code(s, "suggestion id")
+    with _transaction() as con:
+        shown = con.execute("SELECT source_id, as_of FROM order_feedback WHERE card_key = ? AND outcome = 'shown' "
+                            "LIMIT 1", (card_uuid,)).fetchone()
+        source_id, as_of = (shown["source_id"], shown["as_of"]) if shown else (None, None)
+        _write(con, session, f"cds_{outcome}", card_uuid)
+        con.execute("INSERT INTO feedback (session, service_id, card_uuid, source_id, as_of, outcome, override_reason, "
+                    "accepted_suggestions, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (session, service_id, card_uuid, source_id, as_of, outcome,
+                     override_reason, json.dumps(list(accepted_suggestions)), _now()))
+    return {"card_uuid": card_uuid, "outcome": outcome, "logged": True}
 
 
-def add_order_feedback(card_key: str, outcome: str, *, session: str = ANONYMOUS, channel: str = "order_view",
-                       source_kind: str | None = None, source_id: str | None = None, state: str | None = None,
-                       reason: str | None = None, changed_to: str | None = None, unit: str | None = None,
-                       drug: str | None = None, indication: str | None = None, as_of=None) -> dict:
-    """Log one outcome (shown | keep | change | details). `shown` is logged once per session and card key.
-    No user or patient id is stored."""
-    if outcome not in ORDER_OUTCOMES:
-        raise ValueError(f"unknown outcome {outcome}")
-    with _conn() as con:
-        if outcome == "shown":
-            dup = con.execute("SELECT id FROM feedback WHERE session = ? AND card_key = ? AND outcome = 'shown'",
-                              (session, card_key)).fetchone()
-            if dup is not None:
-                return {"id": dup["id"], "card_key": card_key, "outcome": outcome, "duplicate": True}
-        _count_write(con, session)
-        fid = con.execute("INSERT INTO feedback (session, channel, card_key, source_kind, source_id, state, outcome, reason, "
-                          "changed_to, unit, drug, indication, as_of, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                          (session, channel, card_key, source_kind, source_id, state, outcome, reason, changed_to, unit,
-                           drug, indication, None if as_of is None else _day(as_of), _now())).lastrowid
-    return {"id": fid, "card_key": card_key, "outcome": outcome, "duplicate": False, "source_kind": source_kind,
-            "source_id": source_id}
-
-
-def add_cds_feedback(card_uuid: str, outcome: str, *, session: str = ANONYMOUS, reason: str | None = None,
-                     changed_to: str | None = None, service_id: str | None = None) -> dict:
-    """CDS Hooks feedback: accepted -> change, overridden -> keep. The card's source comes from `cards`."""
-    mapped = {"accepted": "change", "overridden": "keep"}.get(outcome)
-    if mapped is None:
-        raise ValueError(f"unknown CDS outcome {outcome}")
-    info = card_info(card_uuid) or {}
-    return add_order_feedback(card_uuid, mapped, session=session, channel=f"cds_hooks:{service_id or info.get('service_id')}",
-                              source_kind=info.get("source_kind"), source_id=info.get("source_id"),
-                              state=info.get("state"), reason=reason, changed_to=changed_to, unit=info.get("unit"),
-                              drug=info.get("drug"), indication=info.get("indication"), as_of=info.get("as_of"))
-
-
-def feedback_rows(session: str | None = None) -> list[dict]:
-    q, args = "SELECT * FROM feedback", []
-    if session is not None:
-        q, args = q + " WHERE session = ?", [session]
-    with _conn() as con:
-        return [dict(r) for r in con.execute(q + " ORDER BY id", args).fetchall()]
-
-
-def feedback_summary(as_of=None, session: str | None = None) -> dict:
-    """Per source: shown / changed / kept / details counts, keep reasons and change targets. For cards issued at replay
-    dates up to `as_of` (all when None). Infection-control view; counts only."""
-    rows = feedback_rows(session)
-    if as_of is not None:
-        rows = [r for r in rows if r["as_of"] is None or r["as_of"] <= _day(as_of)]
-    groups: dict[tuple, dict] = {}
-    for r in rows:
-        key = (r["source_kind"], r["source_id"])
-        g = groups.setdefault(key, {"source_kind": r["source_kind"], "source_id": r["source_id"], "shown": 0,
-                                    "changed": 0, "kept": 0, "details": 0, "keep_reasons": {}, "changed_to": {},
-                                    "units": set(), "drugs": set()})
-        g[{"shown": "shown", "change": "changed", "keep": "kept", "details": "details"}[r["outcome"]]] += 1
-        if r["outcome"] == "keep":
-            reason = r["reason"] or "No reason given"
-            g["keep_reasons"][reason] = g["keep_reasons"].get(reason, 0) + 1
-        if r["outcome"] == "change" and r["changed_to"]:
-            g["changed_to"][r["changed_to"]] = g["changed_to"].get(r["changed_to"], 0) + 1
-        for k, col in (("units", "unit"), ("drugs", "drug")):
-            if r[col]:
-                g[k].add(r[col])
-    items = []
-    for g in sorted(groups.values(), key=lambda g: (str(g["source_kind"]), str(g["source_id"]))):
-        g["units"], g["drugs"] = sorted(g["units"]), sorted(g["drugs"])
-        g["text"] = f"shown {g['shown']} {'time' if g['shown'] == 1 else 'times'}, changed {g['changed']}"
-        items.append(g)
-    totals = {k: sum(g[k] for g in items) for k in ("shown", "changed", "kept", "details")}
-    return {"as_of": None if as_of is None else _day(as_of), "items": items, "totals": totals,
-            "note": "Counts only. No user or patient identifiers are stored."}
+def feedback_summary(session: str, as_of) -> list[dict]:
+    """Per card source, for cards shown up to `as_of`: how often it was shown, changed, kept or opened, with keep
+    reasons. Combines the order screen and CDS Hooks feedback (accepted = changed, overridden = kept). Counts only."""
+    day = _day(as_of)
+    with closing(_connect()) as con:
+        events = [(r["source_id"], r["outcome"], r["reason"]) for r in con.execute(
+            "SELECT source_id, outcome, reason FROM order_feedback WHERE session = ? AND as_of <= ?", (session, day))]
+        events += [(r["source_id"], CDS_OUTCOMES[r["outcome"]], r["override_reason"]) for r in con.execute(
+            "SELECT source_id, outcome, override_reason FROM feedback WHERE session = ? AND as_of <= ?", (session, day))]
+    out = []
+    for source in sorted({e[0] for e in events}, key=str):
+        mine = [e for e in events if e[0] == source]
+        n = Counter(outcome for _, outcome, _ in mine)
+        reasons = Counter(reason or "No reason given" for _, outcome, reason in mine if outcome == "keep")
+        out.append({"source_id": source, "shown": n["shown"], "changed": n["change"], "kept": n["keep"],
+                    "details": n["details"], "keep_reasons": dict(reasons),
+                    "text": f"shown {n['shown']} {'time' if n['shown'] == 1 else 'times'}, changed {n['change']}"})
+    return out

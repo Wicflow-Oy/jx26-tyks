@@ -14,6 +14,18 @@ def test_uro_esbl_seed_numbers(ds):
     assert 0.8 <= prior.patient_id.nunique() / 13 <= 1.6  # "usually about 1 a month"
 
 
+def test_icu_mrsa_seed_numbers(ds):
+    x = ds.isolates
+    icu = data.window(x[(x.ward_code == "ICU") & (x.mrsa == 1)], "2026-03-08", 364)
+    shared = icu[(icu.FOX == "R") & (icu.CLI == "R") & (icu.VAN == "S")]  # "one antibiogram"
+    assert shared.patient_id.nunique() == 3
+    assert shared.sample_date.min() == pd.Timestamp("2026-03-03")  # "since 3 Mar"
+
+
+def test_seeds_are_approved_on_demo_mondays():
+    assert {s["approved_on"] for s in C.DEMO_ALERT_SEEDS} <= set(C.DEMO_MONDAYS)
+
+
 def test_scenario_patients_seen_on_unit(ds):
     c = ds.cultures
     for s in C.DEMO_SCENARIOS:
