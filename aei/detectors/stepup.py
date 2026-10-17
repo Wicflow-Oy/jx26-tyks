@@ -28,7 +28,7 @@ POSITIVE_SCORE = 0.8
 LEARN_WEEKS = 26
 DEDUP_DAYS = 30
 LABEL = ("Count step-up test (Bayesian model comparison, analysis 47): a statistical test of a step change in new "
-         "patients, supporting evidence only; not a prediction.")
+         "patients; supporting evidence only.")
 
 
 def _series(ds, as_of) -> dict:
@@ -67,8 +67,8 @@ def _score(ser, inp, w, m, t) -> dict | None:
     terms = [st.nbinom.logpmf(y - e, r, p) for e in EXTRA_CASES if y - e >= 0]
     if terms:
         log10bf = float((np.logaddexp.reduce(terms) - np.log(len(EXTRA_CASES)) - lp0) / np.log(10))
-        lo_odds = np.log(PRIOR_PI / (1 - PRIOR_PI)) + log10bf * np.log(10)
-        score = float(1 / (1 + np.exp(-lo_odds)))
+        logit = np.log(PRIOR_PI / (1 - PRIOR_PI)) + log10bf * np.log(10)  # prior logit + log BF
+        score = float(1 / (1 + np.exp(-logit)))
     else:
         log10bf, score = float("-inf"), 0.0
     u_lo, u_hi = int(st.nbinom.ppf(0.025, r, p)), max(1, int(st.nbinom.ppf(0.975, r, p)))

@@ -48,8 +48,8 @@ RULES = ("readme_period", "30d")
 
 
 def check_rule(rule: str) -> None:
-    """B1 detectors count distinct patients, so the counting rule does not change their numbers; it is validated and
-    echoed in evidence.filter so the brief and the case file stay consistent."""
+    """B1 detectors count distinct patients (as the analysis does), so the isolate counting rule is not applied; it is
+    validated and echoed in evidence.filter so the brief and the case file stay consistent."""
     if rule not in RULES:
         raise ValueError(f"unknown counting rule {rule}")
 
@@ -396,7 +396,7 @@ def _summary(ds, ep, as_of) -> dict:
     x = upto(ds.isolates, as_of)
     ward, org, prof = ep["ward"], ep["organism"], ep["profile"]
     first = day_date(ep["first_sample_day"])
-    marker = ep.get("marker", cluster_marker(ds, ep, as_of))
+    marker = ep["marker"]
     pop = population(ds, ward, org, marker, prof, first, as_of)
     pats = pop.sort_values(["sample_date", "isolate_id"]).drop_duplicates("patient_id")
     n_patients = len(pats)
@@ -518,12 +518,15 @@ def line_list(ds, signal) -> list[dict]:
 
 def epi_curve(ds, signal, lead_in_days: int = 14) -> list[dict]:
     """Daily counts of new patients in the cluster population (and those with the exact antibiogram), from
-    lead_in_days before the first sample to the signal's as_of, zeros included."""
+    lead_in_days before the first sample to the signal's as_of, zeros included. A filter without date_from (seen
+    before) starts at its earliest isolate."""
     f = signal["evidence"]["filter"]
     rows = _filter_rows(ds, signal, lead_in_days=lead_in_days).sort_values(["sample_date", "isolate_id"])
+    if rows.empty:
+        return []
     first = rows.drop_duplicates("patient_id")
     pattern = f.get("profile")
-    lo = ts(f["date_from"]) - pd.Timedelta(days=lead_in_days)
+    lo = ts(f["date_from"] or rows.sample_date.min()) - pd.Timedelta(days=lead_in_days)
     days = pd.date_range(lo, ts(f["date_to"]), freq="D")
     n = first.groupby("sample_date").size().reindex(days, fill_value=0)
     same = rows[rows.profile == pattern].drop_duplicates("patient_id") if pattern else rows.iloc[0:0]
