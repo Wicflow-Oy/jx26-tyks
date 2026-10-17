@@ -40,6 +40,7 @@ CACHE_DIR = Path(env("AEI_CACHE_DIR") or ROOT / ".cache")
 
 DATA_START = "2023-10-02"  # Monday of ISO 2023-W40
 DATA_END = "2026-09-27"
+REPLAY_FIRST_WEEK = 55  # the replay slider starts at data.week_end(55): detectors need 52 weeks of history before it
 RESULT_LAG_DAYS = 2  # susceptibility results usually arrive 2-3 days after sampling; the data has no result time
 
 DRUGS = ["AMP", "MEC", "TZP", "FOX", "CXM", "CRO", "CAZ", "MEM", "CIP", "TMP", "NIT", "VAN", "CLI"]

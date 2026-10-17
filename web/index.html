@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Antimicrobial resistance brief</title>
+  <style>
+    body { margin: 0; padding: 24px 16px; font: 16px/1.5 system-ui, sans-serif; color: #1d2733; background: #f7f8fa; }
+    main { max-width: 720px; margin: 0 auto; }
+    .label { display: inline-block; padding: 2px 8px; border-radius: 4px; background: #e6ecf2; font-size: 14px; }
+    code { font-size: 14px; overflow-wrap: anywhere; }
+    li { margin: 4px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <p class="label">Prototype · synthetic data</p>
+  <h1>Antimicrobial resistance brief</h1>
+  <p>The interface is on its way. The API is live; every view takes one <code>as_of</code> Sunday (or the brief's
+    <code>monday</code>).</p>
+  <h2>Endpoints</h2>
+  <ul>
+    <li><a href="/api/health"><code>GET /api/health</code></a> and <a href="/api/meta"><code>GET /api/meta</code></a></li>
+    <li><a href="/api/filters"><code>GET /api/filters</code></a></li>
+    <li><a href="/api/brief?monday=2026-03-09"><code>GET /api/brief?as_of=&amp;window=4w&amp;rule=</code></a></li>
+    <li><a href="/api/my-ward?as_of=2026-03-15&amp;ward=ICU"><code>GET /api/my-ward?as_of=&amp;ward=&amp;specimen=&amp;organism=&amp;sex=&amp;age_band=&amp;setting=&amp;rule=</code></a></li>
+    <li><code>GET /api/trend?as_of=&amp;ward=&amp;specimen=&amp;drug=</code></li>
+    <li><a href="/api/replay/weeks"><code>GET /api/replay/weeks</code></a></li>
+    <li><a href="/api/feed?as_of=2026-03-15"><code>GET /api/feed?as_of=</code></a></li>
+    <li><code>GET /api/signals/{id}?as_of=</code> (case file) and <code>GET /api/second-opinion/{id}?as_of=</code></li>
+    <li><code>POST /api/alerts</code>, <code>GET /api/alerts?as_of=</code>, <code>POST /api/alerts/{id}/revoke</code></li>
+    <li><code>POST /api/heads-up</code>, <code>POST /api/heads-up/{id}/approve</code> (never sent)</li>
+    <li><code>POST /api/narrate</code>, <code>POST /api/validate</code></li>
+    <li><code>POST /api/order-context</code>, <code>GET /api/patients/{id}/history?as_of=</code>,
+      <a href="/api/demo/scenarios"><code>GET /api/demo/scenarios</code></a></li>
+    <li><code>POST /api/order-feedback</code>, <code>GET /api/order-feedback/summary?as_of=</code>, <code>GET /api/feedback?as_of=</code></li>
+    <li><a href="/cds-services"><code>GET /cds-services</code></a>, <code>POST /cds-services/{id}</code>,
+      <code>POST /cds-services/{id}/feedback</code> (CDS Hooks 2.0)</li>
+  </ul>
+  <p>Writes are kept per browser session (header <code>X-Demo-Session</code>). Nothing is ever sent.</p>
+</main>
+</body>
+</html>
