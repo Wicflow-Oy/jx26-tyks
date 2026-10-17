@@ -1,0 +1,22 @@
+# Case A: Traefik owns 80/443. Attaches only to Traefik's existing network; no host ports.
+# All router/service/middleware names are prefixed jx-tyks.
+services:
+  tyks:
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-n8n_default}"
+      - "traefik.http.routers.jx-tyks.rule=Host(`${TYKS_HOST:-tyks-demo.demo.wicflow.com}`)"
+      - "traefik.http.routers.jx-tyks.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.jx-tyks.tls.certresolver=${TYKS_CERTRESOLVER:-zerossl}"
+      - "traefik.http.services.jx-tyks.loadbalancer.server.port=8765"
+      - "traefik.http.middlewares.jx-tyks-headers.headers.customresponseheaders.X-Robots-Tag=noindex, nofollow"
+      - "traefik.http.middlewares.jx-tyks-headers.headers.referrerPolicy=no-referrer"
+      - "traefik.http.middlewares.jx-tyks-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.routers.jx-tyks.middlewares=jx-tyks-headers"
+
+networks:
+  traefik:
+    name: ${TRAEFIK_NETWORK:-n8n_default}
+    external: true

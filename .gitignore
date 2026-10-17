@@ -10,4 +10,7 @@ data/
 *.pkl
 *.sqlite
 .env
+.env.local
+.env.*
+!.env.example
 deploy/artifact/

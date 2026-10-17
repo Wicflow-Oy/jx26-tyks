@@ -1,5 +1,9 @@
-# The image is built only from deploy/artifact (see Dockerfile); everything else stays out of the build context.
+# Only what the image needs. Data, caches, keys and the venv never enter the build context.
 *
 !Dockerfile
-!deploy/artifact/**
-deploy/artifact/**/__pycache__
+!requirements.txt
+!aei/**
+!web/**
+!deploy/entrypoint.sh
+**/__pycache__
+**/*.pyc

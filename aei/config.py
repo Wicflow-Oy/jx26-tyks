@@ -5,8 +5,33 @@ from pathlib import Path
 APP_NAME = "Strainwatch"  # placeholder; the team decides the final name
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = Path(os.environ.get("AEI_DATA_DIR", Path(__file__).resolve().parents[3] / "context" / "data" / "synthetic_microbiology_dataset"))
-CACHE_DIR = Path(os.environ.get("AEI_CACHE_DIR", ROOT / ".cache"))
+
+
+def _load_env_local(path: Path) -> None:
+    """Local development only: the team lead puts this app's keys in builds/tyks/.env.local (gitignored). Real environment
+    variables win. Values are never printed or logged."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+_load_env_local(ROOT / ".env.local")
+
+
+def env(name: str, default: str | None = None) -> str | None:
+    """Read an env var; an empty value counts as unset (the server's .env names every variable, most left empty)."""
+    v = os.environ.get(name)
+    return default if v is None or v.strip() == "" else v.strip()
+
+
+_DEV_DATA = ROOT.parent.parent / "context" / "data" / "synthetic_microbiology_dataset"  # the hackathon folder layout
+DATA_DIR = Path(env("AEI_DATA_DIR") or (_DEV_DATA if _DEV_DATA.is_dir() else ROOT / "data"))
+CACHE_DIR = Path(env("AEI_CACHE_DIR") or ROOT / ".cache")
 
 DATA_START = "2023-10-02"  # Monday of ISO 2023-W40
 DATA_END = "2026-09-27"
@@ -132,11 +157,11 @@ TOUR_START_AS_OF = "2026-03-01"
 
 # ---------------------------------------------------------------------------------------------------------------
 # Public deployment guards (env-overridable)
-PUBLIC = os.environ.get("AEI_PUBLIC", "0") == "1"
-STATE_DB = Path(os.environ.get("AEI_STATE_DB", CACHE_DIR / "state.sqlite"))  # writable; may be ephemeral (/tmp)
-DAILY_SPEND_USD = float(os.environ.get("AEI_DAILY_SPEND_USD", "20"))
-RATE_LIMIT_PER_MIN = int(os.environ.get("AEI_RATE_LIMIT_PER_MIN", "120"))      # all API requests per IP
-LLM_RATE_LIMIT_PER_MIN = int(os.environ.get("AEI_LLM_RATE_LIMIT_PER_MIN", "6"))  # live model calls per IP
-LLM_RATE_LIMIT_PER_DAY = int(os.environ.get("AEI_LLM_RATE_LIMIT_PER_DAY", "60"))
+PUBLIC = env("AEI_PUBLIC", "0") == "1"
+STATE_DB = Path(env("AEI_STATE_DB") or CACHE_DIR / "state.sqlite")  # writable; may be ephemeral (/tmp)
+DAILY_SPEND_USD = float(env("AEI_DAILY_SPEND_USD", "20"))
+RATE_LIMIT_PER_MIN = int(env("AEI_RATE_LIMIT_PER_MIN", "120"))      # all API requests per IP
+LLM_RATE_LIMIT_PER_MIN = int(env("AEI_LLM_RATE_LIMIT_PER_MIN", "6"))  # live model calls per IP
+LLM_RATE_LIMIT_PER_DAY = int(env("AEI_LLM_RATE_LIMIT_PER_DAY", "60"))
 SESSION_HEADER = "X-Demo-Session"  # random id from the browser; scopes judges' approvals and order feedback
-MAX_WRITES_PER_SESSION = int(os.environ.get("AEI_MAX_WRITES_PER_SESSION", "200"))
+MAX_WRITES_PER_SESSION = int(env("AEI_MAX_WRITES_PER_SESSION", "200"))

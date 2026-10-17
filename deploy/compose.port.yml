@@ -1,0 +1,5 @@
+# Case B: Caddy or nginx on the host owns 80/443. Publishes on loopback only; the host proxy forwards to it.
+services:
+  tyks:
+    ports:
+      - "127.0.0.1:${TYKS_PORT:-8765}:8765"

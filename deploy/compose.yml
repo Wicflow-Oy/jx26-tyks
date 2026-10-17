@@ -1,12 +1,8 @@
-# Tyks public demo. Compose project: jx-tyks. Conventions: ../../HOSTING.md
-# Runs behind the box's existing Traefik. No published host ports.
-# Production rule: if this box also runs wicflow.com, touch ONLY this project
-# (never wicflow-site, never Traefik's own config, never restart Traefik).
-#
-# Box layout mirrors the repo: /opt/jx/tyks/{Dockerfile, .dockerignore, .env, deploy/compose.yml, deploy/artifact/}
-# Deploy (from /opt/jx/tyks, after the team lead confirms box, DNS and SSH):
-#   docker compose -p jx-tyks -f deploy/compose.yml --env-file .env up -d --build
-# The build only installs prebuilt wheels from deploy/artifact: no compiling and no package downloads on the box.
+# Tyks public demo: base service. Compose project: jx-tyks. Conventions: ../../HOSTING.md (hackathon folder).
+# Always combine with ONE proxy file:
+#   Traefik:      -f deploy/compose.yml -f deploy/compose.traefik.yml
+#   Caddy/nginx:  -f deploy/compose.yml -f deploy/compose.port.yml
+# Production box: act only on project jx-tyks. See DEPLOY.md.
 name: jx-tyks
 
 services:
@@ -24,33 +20,24 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    # Secrets live only on the box (/opt/jx/tyks/.env, chmod 600, never in git): ANTHROPIC_API_KEY (this app's own key).
+    # Secrets live only on the box (/opt/jx/tyks/.env, chmod 600, never in git).
     env_file:
-      - ../.env
+      - path: ../.env
+        required: true
     environment:
       - AEI_PUBLIC=1
       - AEI_STATE_DB=/tmp/state.sqlite
+    volumes:
+      # The synthetic dataset (6 CSVs), copied to the box separately; never in git or in the image.
+      - ${TYKS_DATA_DIR:-../data}:/app/data:ro
+      # Precomputed caches survive restarts; safe to delete (they rebuild at start).
+      - tyks-cache:/app/cache
     healthcheck:
       test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=5).status == 200 else 1)"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-    networks:
-      - traefik
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=${TRAEFIK_NETWORK:-n8n_default}"
-      - "traefik.http.routers.jx-tyks.rule=Host(`${TYKS_HOST:-tyks-demo.demo.wicflow.com}`)"
-      - "traefik.http.routers.jx-tyks.entrypoints=websecure"
-      - "traefik.http.routers.jx-tyks.tls.certresolver=${TYKS_CERTRESOLVER:-zerossl}"
-      - "traefik.http.services.jx-tyks.loadbalancer.server.port=8765"
-      - "traefik.http.middlewares.jx-tyks-headers.headers.customresponseheaders.X-Robots-Tag=noindex, nofollow"
-      - "traefik.http.middlewares.jx-tyks-headers.headers.referrerPolicy=no-referrer"
-      - "traefik.http.middlewares.jx-tyks-headers.headers.contentTypeNosniff=true"
-      - "traefik.http.routers.jx-tyks.middlewares=jx-tyks-headers"
+      start_period: 120s
 
-networks:
-  traefik:
-    name: ${TRAEFIK_NETWORK:-n8n_default}
-    external: true
+volumes:
+  tyks-cache:
