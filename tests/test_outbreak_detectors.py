@@ -96,6 +96,26 @@ def test_uro_esbl_cluster_fires_by_4_june_2025(ds):
     assert s["priority"] == "P1" and s["status"] == "new"
 
 
+def unit_patients_with_pattern(ds, ward, organism, pattern, first) -> int:
+    """Patients on the unit with this exact antibiogram in the 52 weeks before the cluster's first sample, by hand."""
+    x = ds.isolates
+    first = pd.Timestamp(first)
+    year = x[(x.sample_date >= first - pd.Timedelta(days=364)) & (x.sample_date < first)]
+    return year[(year.ward_code == ward) & (year.organism == organism) & (year.profile == pattern)].patient_id.nunique()
+
+
+def test_phenotype_card_separates_the_model_range_from_the_observed_count(ds):
+    """Brief D6 / clinical D-L5: the range is a model at the hospital-wide rate, and the observed count stands beside it."""
+    icu = one(phenotype.detect(ds, "2026-03-08"), ward="ICU")
+    assert unit_patients_with_pattern(ds, "ICU", "Staphylococcus aureus", ICU_PATTERN, "2026-03-03") == 0
+    assert ("Expected with this antibiogram at the hospital-wide rate: 0–2 patients a year on this unit (observed in "
+            "the year before: 0). This antibiogram was 9% of MRSA patients hospital-wide in the year before.") in icu["text"]
+    uro = one(phenotype.detect(ds, "2025-06-08"), ward="URO")
+    assert unit_patients_with_pattern(ds, "URO", "Escherichia coli", URO_PATTERN, "2025-05-30") == 3
+    assert "0–6 patients a year on this unit (observed in the year before: 3)" in uro["text"]
+    assert " it " not in icu["text"] + uro["text"]
+
+
 def test_medb_esbl_lookalike_is_heterogeneous_and_ranked_lower(ds):
     assert [s for s in phenotype.detect(ds, "2024-09-22") if s["ward"] == "MED-B"] == []
     s = one(thl.detect(ds, "2024-09-22"), ward="MED-B")
@@ -135,6 +155,25 @@ def test_vre_card_on_ger_by_14_sep_2026_brief(ds):
     assert s["priority"] == "P1" and s["status"] == "new" and s["first_sample_date"] == "2026-09-11"
 
 
+def test_thl_actions_follow_thl_2_2020(ds):
+    """Clinical D-H3, D-M5, D-L1, D-L2, D-L3 (THL Ohjaus 2/2020 sections 5.2, 8.1.1, 8.1.3, 8.2.3, appendix 1)."""
+    ger_kp = one(thl.detect(ds, "2026-06-21"), ward="GER")  # ESBL K. pneumoniae: contact precautions and screening
+    assert ger_kp["organism"] == "Klebsiella pneumoniae"
+    assert ger_kp["evidence"]["action"].startswith("Contact precautions; screen exposed patients")
+    uro = one(phenotype.detect(ds, "2025-06-08"), ward="URO")  # ESBL E. coli: contact precautions by risk assessment
+    assert uro["evidence"]["thl_rule"]["action"].startswith("Standard precautions; contact precautions by risk assessment")
+    (icu,) = icu_clusters(ds, "2026-03-15")
+    assert "new MRSA strains go to the THL reference lab" in icu["evidence"]["thl_rule"]["action"]
+    ed = one(thl.detect(ds, "2026-02-01"), ward="ED")  # K. oxytoca CPE, outpatient: carrier flag, strain by agreement
+    assert "Flag as carrier" in ed["text"] and "screen exposed" not in ed["text"]
+    assert "strain to the THL reference lab (agree in advance for this species)" in ed["text"]
+    meda = one(thl.detect(ds, "2026-09-27"), ward="MED-A")  # K. pneumoniae CPE, inpatient: routine strain submission
+    assert "screen exposed patients" in meda["text"] and "agree in advance" not in meda["text"]
+    cards = [s for s in thl.detect(ds, "2026-02-15") if s["template_id"].startswith("ob_thl_single")] + [ed, meda]
+    for s in cards:  # the card text and the case file's action are one sentence
+        assert s["evidence"]["action"] in s["text"] and "one week" not in s["evidence"]["action"]
+
+
 def test_marker_cluster_check_folds_into_phenotype_cluster(ds):
     """The ICU MRSA same-unit THL check is evidence on the phenotype card, not a second card."""
     assert [s for s in thl.detect(ds, "2026-03-15") if s["ward"] == "ICU"] == []
@@ -159,6 +198,8 @@ def test_stepup_is_never_p1_on_its_own(ds, monkeypatch):
     for s in sigs:
         assert s["kind"] == "count_stepup" and s["priority"] == "P3"
         check_signal(s)
+    ended = one(stepup.detect(ds, "2026-04-19"), ward="ICU")  # a resolved item never says "test positive"
+    assert ended["status"] == "resolved" and "no longer positive" in ended["text"]
 
 
 # ---------------------------------------------------------------- seen before
@@ -169,8 +210,10 @@ def test_seen_before_icu_mrsa_before_the_cluster(ds):
     assert c["n_same_ward_before"] == 0 and "not seen on ICU before" in s["text"]
     assert c["n_elsewhere_before"] == 11
     assert c["elsewhere_by_ward"] == {"ED": 4, "SURG": 4, "MED-A": 1, "PHC-N": 1, "PHC-S": 1}
-    # Strictly as of 29 Mar: 11 earlier + 12 cluster patients of 94 MRSA patients sampled so far
-    assert (c["bg_k"], c["bg_n"]) == (23, 94) and "24.5% of 94 MRSA patients" in s["text"]
+    assert "earlier patients elsewhere: 11 (ED 4, SURG 4, MED-A 1, PHC-N 1, PHC-S 1)" in s["text"]  # not "other 3"
+    # Re-pinned from 23 of 94 "to date": that counted the cluster's own 12 patients (my-ward cross-area note), so the
+    # background is now the MRSA patients sampled before the cluster's first sample on 3 Mar
+    assert (c["bg_k"], c["bg_n"]) == (11, 80) and "this antibiogram was 13.8% of 80 MRSA patients" in s["text"]
 
 
 def test_seen_before_icu_mrsa_back_on_icu(ds):

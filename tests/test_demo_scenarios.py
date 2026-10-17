@@ -1,25 +1,15 @@
-"""The demo seeds and scenarios quote real numbers from the synthetic data; keep them true."""
-import pandas as pd
-
+"""The demo scenarios' stated reasons hold against the data. The seed messages and antibiograms are checked against the
+raw CSVs in tests/test_against_source.py, and the shared result rules in tests/test_phenotype_rules.py."""
 from aei import config as C
 from aei import data
-from aei.phenotype_rules import effective_column, effective_result
+from aei.phenotype_rules import effective
+
+SCENARIOS = {s["key"]: s for s in C.DEMO_SCENARIOS}
 
 
-def test_uro_esbl_seed_numbers(ds):
-    x = ds.isolates
-    esbl = x[(x.ward_code == "URO") & (x.esbl == 1)]
-    assert data.window(esbl, "2025-06-08", 14).patient_id.nunique() == 6
-    prior = data.window(esbl, pd.Timestamp("2025-06-08") - pd.Timedelta(days=28), 364)
-    assert 0.8 <= prior.patient_id.nunique() / 13 <= 1.6  # "usually about 1 a month"
-
-
-def test_icu_mrsa_seed_numbers(ds):
-    x = ds.isolates
-    icu = data.window(x[(x.ward_code == "ICU") & (x.mrsa == 1)], "2026-03-08", 364)
-    shared = icu[(icu.FOX == "R") & (icu.CLI == "R") & (icu.VAN == "S")]  # "one antibiogram"
-    assert shared.patient_id.nunique() == 3
-    assert shared.sample_date.min() == pd.Timestamp("2026-03-03")  # "since 3 Mar"
+def history(ds, key: str):
+    s = SCENARIOS[key]
+    return data.window(ds.isolates[ds.isolates.patient_id == s["patient_id"]], s["as_of"], C.WINDOWS["12m"])
 
 
 def test_seeds_are_approved_on_demo_mondays():
@@ -32,21 +22,21 @@ def test_scenario_patients_seen_on_unit(ds):
         assert len(c[(c.patient_id == s["patient_id"]) & (c.ward_code == s["unit"])]), s["key"]
 
 
-def test_ed_patient_has_own_trimethoprim_r(ds):
-    h = data.window(ds.isolates[ds.isolates.patient_id == "P008135"], "2026-03-15", 364)
-    assert any(effective_result(r, "TMP")[0] == "R" for _, r in h.iterrows())
+def test_alert_scenarios_order_a_drug_their_seed_covers():
+    seeds = {s["wards"][0]: s for s in C.DEMO_ALERT_SEEDS}
+    for key in ("uro-esbl", "icu-mrsa"):
+        s = SCENARIOS[key]
+        assert s["drug"] in seeds[s["unit"]]["drugs"]
+        assert seeds[s["unit"]]["approved_on"] <= s["as_of"] <= seeds[s["unit"]]["expires_on"]
 
 
-def test_expert_rules():
-    mrsa = {"organism": "Staphylococcus aureus", "mrsa": 1, "esbl": 0, "CXM": None, "FOX": "R"}
-    assert effective_result(mrsa, "CXM") == ("R", "inferred from MRSA")
-    assert effective_result(mrsa, "FOX") == ("R", "reported")
-    assert effective_result({"organism": "Proteus mirabilis", "NIT": None}, "NIT") == ("R", "intrinsic")
+def test_ed_patient_had_a_reported_trimethoprim_r_on_16_jan_2026(ds):
+    h = history(ds, "ed-own-history")
+    result, reason = effective(h, "TMP")
+    own_r = h[(result == "R") & (reason == "reported")]
+    assert [(str(d.date()), o) for d, o in zip(own_r.sample_date, own_r.organism)] == [("2026-01-16", "Escherichia coli")]
 
 
-def test_effective_column_matches_rowwise(ds):
-    x = ds.isolates.sample(2000, random_state=1)
-    for d in ["CXM", "FOX", "NIT"]:
-        col = effective_column(x, d)
-        row = [effective_result(r, d)[0] for _, r in x.iterrows()]
-        assert list(col) == row
+def test_quiet_patient_previous_isolate_is_nitrofurantoin_s(ds):
+    result, reason = effective(history(ds, "medb-quiet"), "NIT")
+    assert (list(result), list(reason)) == (["S"], ["reported"])

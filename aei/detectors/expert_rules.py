@@ -1,11 +1,13 @@
-"""EUCAST expert-rule consistency checks (config.EXPERT_RULES), ported from 40_esbl_flag and 52_seen_before_expert_rules.
+"""Phenotype consistency checks on reported results (config.EXPERT_RULES), ported from 40_esbl_flag and
+52_seen_before_expert_rules and widened per the clinical review (EUCAST Expert Rules v3.3).
 
 Row-level lab checks on every isolate (no deduplication: each implausible report is one result to check):
-  esbl_ceph_s  ESBL-flagged but S to cefuroxime or ceftriaxone (the flag implies R)      golden 0 of 517
-  mrsa_fox_s   MRSA-flagged S. aureus reported cefoxitin S (MRSA implies FOX R)            golden 0 of 111
-  cro_r_amp_s  E. coli ceftriaxone R with ampicillin S
-  cro_r_cxm_s  E. coli / K. pneumoniae ceftriaxone R with cefuroxime S
-The last two together are the 109 implausible rows of 40/52. The brief lists hits sampled in the last 7 days.
+  esbl_ceph_s         ESBL-flagged but S to cefuroxime or ceftriaxone (local reporting rule)        golden 0 of 517
+  mrsa_fox_s          MRSA-flagged S. aureus reported cefoxitin S                                  golden 0 of 111
+  cro_r_amp_or_cxm_s  ceftriaxone R with ampicillin S or cefuroxime S, in the species with EUCAST
+                      cefuroxime breakpoints; one check, so an isolate failing both is one result   golden 139
+  tzp_r_amp_s         piperacillin-tazobactam R with ampicillin S (Expert Rules v3.3 rule 1)        golden 276
+The brief lists the hits sampled in the last 7 days, one item per rule.
 """
 import logging
 
@@ -17,7 +19,6 @@ from . import day, plain, ts
 
 log = logging.getLogger(__name__)
 DAYS = 7
-METHOD = "EUCAST expected-phenotype consistency check on reported S/R results (40_esbl_flag, 52_seen_before_expert_rules)"
 
 
 def _orgs(df, rule):
@@ -28,9 +29,13 @@ def _orgs(df, rule):
 _CHECKS = {
     "esbl_ceph_s": lambda df: (df.esbl == 1, (df.CXM == "S") | (df.CRO == "S")),
     "mrsa_fox_s": lambda df: (df.mrsa == 1, df.FOX == "S"),
-    "cro_r_amp_s": lambda df: (df.CRO == "R", df.AMP == "S"),
-    "cro_r_cxm_s": lambda df: (df.CRO == "R", df.CXM == "S"),
+    "cro_r_amp_or_cxm_s": lambda df: (df.CRO == "R", (df.AMP == "S") | (df.CXM == "S")),
+    "tzp_r_amp_s": lambda df: (df.TZP == "R", df.AMP == "S"),
 }
+
+
+def method(rule: dict) -> str:
+    return f"{C.EXPERT_RULES_LABEL} on reported S/R results; {rule['basis']}"
 
 
 def masks(df: pd.DataFrame, rule_id: str) -> tuple[pd.Series, pd.Series]:
@@ -72,7 +77,7 @@ def detect(ds, as_of, rule: str = "readme_period", days: int = DAYS) -> list[dic
             "filter": {"ward": units, "specimen": None, "organism": r.get("organisms"), "drug": None,
                        "date_from": day(end - pd.Timedelta(days=days - 1)), "date_to": day(end), "rule": "all_isolates"},
             "counts": {"hits": n, "checked": int(checked.sum()), "by_unit": h.ward_code.value_counts().to_dict()},
-            "method": METHOD,
+            "method": method(r),
             "params": {"rule_id": r["id"], "window_days": days},
             "isolate_ids": h.isolate_id.astype(str).tolist(),
         })

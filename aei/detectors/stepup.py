@@ -153,7 +153,8 @@ def _signal(ds, run, as_of, rule) -> dict:
         "isolate_ids": rows.isolate_id.tolist(),
         "date_basis": ph.DATE_BASIS,
     }
-    return S.make_signal(KIND, _key(run), priority="P3", as_of=ph.iso(as_of), template_id="ob_stepup", slots=slots,
+    template_id = "ob_stepup" if run["active"] else "ob_stepup_resolved"
+    return S.make_signal(KIND, _key(run), priority="P3", as_of=ph.iso(as_of), template_id=template_id, slots=slots,
                          evidence=evidence, ward=w, first_sample_date=ph.iso(rows.sample_date.min()) if len(rows) else None,
                          section="unusual_patterns", advice=None)
 

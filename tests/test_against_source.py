@@ -40,7 +40,7 @@ def source() -> pd.DataFrame:
 
 @lru_cache(maxsize=1)
 def cultures() -> pd.DataFrame:
-    return pd.read_csv(RAW / "cultures.csv", parse_dates=["sample_date"])
+    return pd.read_csv(RAW / "cultures.csv", parse_dates=["sample_date", "admission_date"])
 
 
 def window(df: pd.DataFrame, as_of: str, days: int) -> pd.DataFrame:
@@ -109,13 +109,13 @@ def test_icu_staph_aureus_resistance_change(ds, drug, now, year_before):
     assert (source_now, source_before) == (now, year_before)
 
 
-@pytest.mark.xfail(strict=True, reason="D2: render.fmt pct0 uses Python round() (half to even), so 10 of 16 prints 62%")
 def test_icu_cefoxitin_percentage_rounds_half_up(ds):
     r, n = _icu_staph_aureus("2026-04-05", "FOX", 28)
     assert (r, n) == (10, 16)
     item = next(s for s in resistance_change.detect(ds, "2026-04-05")
                 if s["evidence"]["filter"]["ward"] == "ICU" and s["evidence"]["filter"]["drug"] == "FOX")
-    assert f"{r} of {n} resistant ({int(100 * r / n + 0.5)}%" in item["text"]  # 62.5 -> 63
+    # Cefoxitin is the MRSA screen, so the text counts S. aureus; 62.5 rounds half up to 63
+    assert f"{r} of {n} S. aureus ({int(100 * r / n + 0.5)}%" in item["text"]
 
 
 def _policy_population(as_of: str, days: int = 364) -> tuple[int, int]:
@@ -140,16 +140,17 @@ def test_policy_line_trimethoprim_crossed_20_percent_on_21_jun_2026(ds):
 def test_expert_rule_counts_over_every_isolate(ds):
     x = source()
     esbl, mrsa = x[x.esbl == 1], x[(x.mrsa == 1) & (x.organism == SA)]
-    cro_r_amp_s = (x.organism == ECOLI) & (x.CRO == "R") & (x.AMP == "S")
-    cro_r_cxm_s = x.organism.isin([ECOLI, "Klebsiella pneumoniae"]) & (x.CRO == "R") & (x.CXM == "S")
+    cro_scope = [ECOLI, "Klebsiella pneumoniae", "Klebsiella oxytoca", "Proteus mirabilis"]
+    cro_r_amp_or_cxm_s = x.organism.isin(cro_scope) & (x.CRO == "R") & ((x.AMP == "S") | (x.CXM == "S"))
+    tzp_r_amp_s = x.organism.isin([ECOLI, "Proteus mirabilis"]) & (x.TZP == "R") & (x.AMP == "S")
     product = expert_rules.rule_counts(ds.isolates)
     assert (len(esbl), int(((esbl.CXM == "S") | (esbl.CRO == "S")).sum())) == tuple(product["esbl_ceph_s"].values()) \
         == (517, 0)
     assert (len(mrsa), int((mrsa.FOX == "S").sum())) == tuple(product["mrsa_fox_s"].values()) == (111, 0)
-    assert int(cro_r_amp_s.sum()) == product["cro_r_amp_s"]["hits"] == 43
-    assert int(cro_r_cxm_s.sum()) == product["cro_r_cxm_s"]["hits"] == 107
-    product_union = expert_rules.masks(ds.isolates, "cro_r_amp_s")[1] | expert_rules.masks(ds.isolates, "cro_r_cxm_s")[1]
-    assert int((cro_r_amp_s | cro_r_cxm_s).sum()) == int(product_union.sum()) == 109
+    # was 109 in two overlapping rules for E. coli and K. pneumoniae only: now one rule (brief review D7) whose scope
+    # adds K. oxytoca and P. mirabilis (clinical review D-L6)
+    assert int(cro_r_amp_or_cxm_s.sum()) == product["cro_r_amp_or_cxm_s"]["hits"] == 139
+    assert int(tzp_r_amp_s.sum()) == product["tzp_r_amp_s"]["hits"] == 276  # new rule (clinical review D-L6)
 
 
 def test_phc_s_data_gap_week_ending_14_dec_2025(ds):
@@ -182,6 +183,49 @@ def test_thl_alert_organism_cards_on_27_sep_2026(ds, marker, ward, organism, spe
     assert int(case.care_day) == card["evidence"]["counts"]["care_day"] == care_day
     assert (int(case.care_day) >= 3) == card["evidence"]["counts"]["hospital_onset"]
     assert (case.sample_date - previous.sample_date).days == card["slots"]["days_since_prev"] == days_since_prev
+
+
+# --------------------------------------------------------------------------- demo alert seeds and scenario patients
+BETA_LACTAMS_ON_PANEL = {"AMP", "MEC", "TZP", "FOX", "CXM", "CRO", "CAZ", "MEM"}
+
+
+def seed(seed_id: str) -> dict:
+    return next(s for s in C.DEMO_ALERT_SEEDS if s["id"] == seed_id)
+
+
+def uro_esbl_e_coli() -> pd.DataFrame:
+    x = source()
+    return x[(x.ward_code == "URO") & (x.esbl == 1) & (x.organism == ECOLI)]
+
+
+def test_uro_esbl_seed_alert_matches_the_data():
+    s, esbl = seed("seed-uro-esbl-2025"), uro_esbl_e_coli()
+    run = window(esbl, "2025-06-08", 10)  # 30 May to 8 Jun: the data behind the 9 Jun approval
+    assert window(esbl, "2025-05-29", 14).empty  # nothing in the two weeks before: the run starts on 30 May
+    assert run.patient_id.nunique() == 6 and "6 patients since 30 May" in s["message"]
+    [antibiogram] = run.apply(profile, axis=1).unique()
+    resistant = [d for d in README_DRUG_ORDER if f"{d}:R" in antibiogram.split()]
+    assert resistant == ["AMP", "CXM", "CRO", "CIP", "TMP"] == s["resistant_to"] == s["drugs"]
+    assert "(ampicillin, cefuroxime, ceftriaxone, ciprofloxacin and trimethoprim R)" in s["message"]
+    assert window(esbl, "2025-05-29", 364).patient_id.nunique() == 11  # "usually about 1 ESBL E. coli patient a month"
+
+
+def test_icu_mrsa_seed_alert_matches_the_data():
+    s, run = seed("seed-icu-mrsa-2026"), icu_mrsa("2026-03-08")
+    assert run.patient_id.nunique() == 3 and set(run.apply(profile, axis=1)) == {"FOX:R VAN:S CLI:R"}
+    assert "3 patients with one antibiogram (cefoxitin R, clindamycin R, vancomycin S) since 3 Mar" in s["message"]
+    # its reported R plus every beta-lactam on the panel (MRSA: EUCAST Staphylococcus expert rule 1)
+    assert set(s["resistant_to"]) == set(s["drugs"]) == {"FOX", "CLI"} | BETA_LACTAMS_ON_PANEL
+
+
+def test_uro_esbl_scenario_patient_is_a_woman_on_urology_like_the_clone():
+    s = next(s for s in C.DEMO_SCENARIOS if s["key"] == "uro-esbl")
+    patient = source()[source().patient_id == s["patient_id"]]
+    stay = cultures()[(cultures().patient_id == s["patient_id"]) & (cultures().ward_code == "URO")]
+    assert set(patient.sex) == {"F"} and (stay.admission_date <= s["as_of"]).any()  # admitted 1 Jun 2025
+    assert window(patient, s["as_of"], 364).empty  # no earlier isolate of her own: the alert alone speaks
+    clone = window(uro_esbl_e_coli(), s["as_of"], 28)
+    assert clone.sex.value_counts().to_dict() == {"F": 10, "M": 1}
 
 
 # --------------------------------------------------------------------------- My ward

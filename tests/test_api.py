@@ -3,11 +3,12 @@ order screen and CDS Hooks, write and rate limits, and the public-demo headers."
 import pytest
 from fastapi.testclient import TestClient
 
-from aei import api, brief, cds, data, precompute, store
+from aei import api, brief, cds, data, precompute, store, views
 from aei import config as C
 
 A, B = "judge-aaaa-0001", "judge-bbbb-0002"
 ICU_CLUSTER = "phe-7972cb3f12"  # ICU MRSA 2026, pattern FOX:R VAN:S CLI:R, first sample 3 Mar 2026
+URO_CLUSTER = "phe-d06c1ec1c5"  # URO ESBL E. coli 2025, first sample 30 May 2025
 AS_B = {C.SESSION_HEADER: B}
 SCENARIOS = {s["key"]: s for s in C.DEMO_SCENARIOS}
 
@@ -82,7 +83,7 @@ def test_server_starts_without_data(cache_dir, tmp_path, monkeypatch):
 def test_noindex_everywhere_and_robots_txt(client):
     for path in ("/", "/api/meta", "/robots.txt", "/api/signals/nope", "/no-such-page"):
         assert client.get(path).headers["x-robots-tag"] == "noindex, nofollow"
-    assert '<meta name="robots" content="noindex">' in client.get("/").text
+    assert '<meta name="robots" content="noindex' in client.get("/").text  # the UI shell adds nofollow
     assert client.get("/robots.txt").text == "User-agent: *\nDisallow: /\n"
 
 
@@ -101,9 +102,46 @@ def test_rate_limit_per_forwarded_ip(client, monkeypatch):
     assert client.get("/").status_code == 200  # the static UI is not counted
 
 
+def test_an_unexpected_error_is_a_plain_json_500(client, monkeypatch):
+    def broken(*_):
+        raise RuntimeError("internal detail: /srv/aei/views.py")
+
+    monkeypatch.setattr(views, "filters_catalog", broken)
+    r = client.get("/api/filters")
+    assert r.status_code == 500 and r.json()["error"] == "server_error" and "internal detail" not in r.text
+    assert r.headers["x-robots-tag"] == "noindex, nofollow"
+    assert client.get("/api/meta").status_code == 200
+
+
+def test_request_bodies_are_capped(client):
+    json_type = {"Content-Type": "application/json"}
+    big = client.post("/api/validate", content=b'{"text": "' + b"x" * api.MAX_BODY_BYTES + b'"}', headers=json_type)
+    assert big.status_code == 413 and big.json()["error"] == "too_large" and big.headers["x-robots-tag"]
+    chunked = client.post("/api/validate", content=iter([b'{"text": "x"}']), headers=json_type)
+    assert chunked.status_code == 413  # no declared length
+    assert client.post("/api/validate", json={"text": "x"}).status_code == 200
+
+
 def test_bad_session_header(client):
     r = client.get("/api/alerts", headers={C.SESSION_HEADER: "x"})
     assert r.status_code == 400 and "X-Demo-Session" in r.json()["message"]
+
+
+def test_writes_need_a_session_and_a_reader_without_one_sees_the_seeds_only(client):
+    anon = TestClient(api.app)  # no X-Demo-Session, like curl or an EHR
+    revoke = anon.post("/api/alerts/seed-uro-esbl-2025/revoke", json={"as_of": "2025-06-08"})
+    assert revoke.status_code == 400 and C.SESSION_HEADER in revoke.json()["message"]
+    assert approve(anon).status_code == 400
+    assert anon.post("/api/heads-up", json={"signal_id": ICU_CLUSTER, "as_of": "2026-03-29"}).status_code == 400
+    shown = {"as_of": "2026-03-15", "card_key": "card-1", "source_id": "own_history", "state": "warning",
+             "outcome": "shown"}
+    assert anon.post("/api/order-feedback", json=shown).status_code == 400
+
+    mine = approve(client, as_of="2026-03-15").json()["id"]
+    assert [a["id"] for a in anon.get("/api/alerts?as_of=2026-03-15").json()] == ["seed-icu-mrsa-2026"]
+    assert mine in [a["id"] for a in client.get("/api/alerts?as_of=2026-03-15").json()]
+    got = {s["key"]: s["state"] for s in anon.get("/api/demo/scenarios").json()}
+    assert got == {k: s["expect"] for k, s in SCENARIOS.items()}  # the refused revoke changed nothing
 
 
 @pytest.mark.parametrize("query, message", [
@@ -141,6 +179,15 @@ def test_my_ward_icu_has_banners_and_signals(client):
     assert [b["id"] for b in w["banners"]] == ["seed-icu-mrsa-2026"]
     assert ICU_CLUSTER in [s["id"] for s in w["signals"]]
     assert client.get("/api/my-ward?as_of=2026-03-15&ward=NOPE").status_code == 400
+
+
+def test_my_ward_shows_the_trimethoprim_line_on_urine_views_only(client):
+    def banners(specimen):
+        view = client.get(f"/api/my-ward?as_of=2026-06-21&ward=ED&specimen={specimen}").json()
+        return [b["id"] for b in view["banners"]]
+
+    assert banners("urine") == ["tmp_uti_women_20"]
+    assert banners("blood_wound") == banners("wound") == []  # the line is about urinary E. coli (my-ward #3)
 
 
 def test_replay_weeks_cover_the_range_and_use_precomputed_counts(client, ds):
@@ -203,10 +250,36 @@ def test_approved_alert_reaches_brief_my_ward_and_orders_for_that_session_only(c
     assert order(client).json()["state"] != "warning"
 
 
+@pytest.mark.parametrize("signal_id, as_of, seed_id", [(ICU_CLUSTER, "2026-03-08", "seed-icu-mrsa-2026"),
+                                                        (URO_CLUSTER, "2025-06-08", "seed-uro-esbl-2025")])
+def test_an_approved_cluster_alert_keeps_its_antibiogram_like_the_seed(client, signal_id, as_of, seed_id):
+    alert = approve(client, signal_id=signal_id, as_of=as_of, wards=[]).json()
+    seed = next(a for a in client.get(f"/api/alerts?as_of={as_of}").json() if a["id"] == seed_id)
+    assert alert["resistant_to"] == seed["resistant_to"] and alert["wards"] == seed["wards"]
+
+
 def test_alert_needs_a_signal_that_exists_then(client):
     assert approve(client, as_of="2026-03-01").status_code == 404
     assert approve(client, wards=["NOPE"]).status_code == 400
     assert client.post("/api/alerts/alr-unknown/revoke", json={"as_of": "2026-03-29"}).status_code == 404
+
+
+def test_alert_input_is_checked(client):
+    for change in ({"expires_on": "9999-12-31"}, {"approved_by_role": "ward_doctor"}, {"message": "MRSA\u202e"},
+                   {"message": "MRSA\x00"}):
+        r = approve(client, **change)
+        assert r.status_code == 400 and r.json()["error"] == "bad_request", change
+    assert approve(client, wards=["ICU", "ICU"]).json()["wards"] == ["ICU"]
+
+
+def test_revoke_needs_an_active_alert_and_no_body(client):
+    alert = approve(client).json()  # from the brief of 30 Mar 2026
+    r = client.post(f"/api/alerts/{alert['id']}/revoke", json={"as_of": "2026-03-08"})
+    assert r.status_code == 400 and "not active" in r.json()["message"]  # before the alert existed
+    assert [a["id"] for a in client.get("/api/alerts?as_of=2026-03-29").json()] == [alert["id"]]
+    latest = approve(client, signal_id=None, as_of=C.DATA_END).json()
+    revoked = client.post(f"/api/alerts/{latest['id']}/revoke")  # no body: the last data week
+    assert revoked.status_code == 200 and revoked.json()["revoked_on"] == "2026-09-28"
 
 
 def test_heads_up_is_drafted_approved_and_never_sent(client):
@@ -259,6 +332,14 @@ def test_demo_scenarios_carry_their_state(client):
     assert got == {k: s["expect"] for k, s in SCENARIOS.items()}
 
 
+def test_order_drugs_per_indication(client):
+    uti = {d["drug"] for d in client.get("/api/order-drugs?indication=uti").json()}
+    wound = {d["drug"] for d in client.get("/api/order-drugs?indication=wound").json()}
+    assert {"MEC", "NIT", "TMP"} <= uti and not {"VAN", "CLI"} & uti  # Enterobacterales are intrinsically R
+    assert not C.URINE_ONLY & wound
+    assert client.get("/api/order-drugs?indication=nope").status_code == 422
+
+
 def test_bad_orders_and_unknown_patients(client):
     assert order(client, drug="XYZ").status_code == 422
     assert client.get("/api/patients/P999999/history?as_of=2026-03-15").status_code == 404
@@ -298,6 +379,7 @@ def test_cds_discovery_and_an_order_sign_warning(client):
     cards = client.post(f"/cds-services/{services['order-sign']}", json=hook_request("order-sign")).json()["cards"]
     assert [c["indicator"] for c in cards] == ["warning"]
     assert all(link["url"].startswith("http://testserver/") for link in cards[0]["links"])
+    assert [link["label"] for link in cards[0]["links"]] == ["Details"]  # no SMART launch in the demo (audit #11)
     select = client.post(f"/cds-services/{services['order-select']}", json=hook_request("order-select")).json()
     assert [c["indicator"] for c in select["cards"]] == ["info"]
 
@@ -310,11 +392,35 @@ def test_cds_discovery_and_an_order_sign_warning(client):
     assert (own["shown"], own["kept"]) == (2, 1)  # the select (info) and sign (warning) cards, one kept
 
 
+def test_cds_without_a_session_is_logged_but_changes_nothing(client):
+    anon = TestClient(api.app)  # an EHR sends no X-Demo-Session
+    sign = next(s["id"] for s in cds.SERVICES if s["hook"] == "order-sign")
+    cards = anon.post(f"/cds-services/{sign}", json=hook_request("order-sign", "uro-esbl")).json()["cards"]
+    assert [(c["indicator"], c["extension"][f"{cds.SLUG}.source"]["id"]) for c in cards] == [
+        ("warning", "seed-uro-esbl-2025")]
+    feedback = {"feedback": [{"card": cards[0]["uuid"], "outcome": "overridden",
+                              "overrideReason": {"reason": {"code": "keep"}}}]}
+    assert anon.post(f"/cds-services/{sign}/feedback", json=feedback).json() == {"logged": 1}
+    [logged] = store.feedback_summary(store.ANONYMOUS, "2025-06-15")
+    assert (logged["shown"], logged["kept"]) == (1, 1)
+    assert anon.get("/api/feedback?as_of=2025-06-15").json() == client.get("/api/feedback?as_of=2025-06-15").json() == []
+    again = anon.post(f"/cds-services/{sign}", json=hook_request("order-sign", "uro-esbl")).json()["cards"]
+    assert [c["indicator"] for c in again] == ["warning"]
+
+
 def test_cds_errors(client):
     assert client.post("/cds-services/nope", json=hook_request("order-sign")).status_code == 404
     sign = next(s["id"] for s in cds.SERVICES if s["hook"] == "order-sign")
     assert client.post(f"/cds-services/{sign}", json=hook_request("order-select")).status_code == 422
     assert client.post(f"/cds-services/{sign}", json={"hook": "order-sign"}).status_code == 422
+    listed = hook_request("order-sign")
+    listed["context"]["patientId"] = ["P000001", "P000002"]
+    r = client.post(f"/cds-services/{sign}", json=listed)
+    assert r.status_code == 422 and "Lengths" not in r.text  # was pandas' message (audit #10)
+    for reason in ("keep", ["keep"]):  # a reason must be a Coding object; both were a 500 (audit #1)
+        item = {"card": "abc", "outcome": "overridden", "overrideReason": {"reason": reason}}
+        r = client.post(f"/cds-services/{sign}/feedback", json={"feedback": [item]})
+        assert r.status_code == 422 and r.json()["error"] == "invalid_request" and r.headers["x-robots-tag"]
 
 
 def test_brief_cache_is_used(client, cache_dir):

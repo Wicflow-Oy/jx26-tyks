@@ -1,10 +1,13 @@
 """'Seen before': antibiogram fingerprint matching (port of analysis 52_seen_before_expert_rules). Profile match, not typing.
 
 Cluster mode, for each phenotype cluster shown at as_of: earlier patients with the same organism and exact antibiogram,
-before the cluster's first sample, on the same unit vs elsewhere (by unit), and the antibiogram's background share
-among the population to date (the marker population, e.g. all MRSA patients, or the organism with the same test panel).
+before the cluster's first sample, on the same unit vs elsewhere (every unit named with its count), and the
+antibiogram's background share among the population before the cluster (the marker population, e.g. all MRSA patients,
+or the organism with the same test panel). Counting the cluster's own patients would make its antibiogram look common
+because of the cluster itself.
 Return mode, for each past marker phenotype cluster (MRSA, ESBL, VRE, CPE) that has stopped: a new patient with the
-same organism and exact antibiogram on the same unit. Shown for 28 days after the latest such sample.
+same organism and exact antibiogram on the same unit, with the background share among the population to date (as in
+analysis 52). Shown for 28 days after the latest such sample.
 A share of 2% or more is labelled weak evidence (the ICU MRSA antibiogram is about a fifth of all MRSA patients).
 Section seen_before, priority info. Strictly as-of: only isolates sampled on or before as_of are used.
 """
@@ -28,10 +31,13 @@ def _patients_with(ds, as_of, organism, pattern) -> pd.DataFrame:
     return same.sort_values(["sample_date", "isolate_id"]).drop_duplicates("patient_id")
 
 
-def background(ds, as_of, organism, pattern, marker) -> dict:
-    """Share of patients to date whose first isolate in the population has this antibiogram (analysis 52)."""
+def background(ds, as_of, organism, pattern, marker, before=None) -> dict:
+    """Share of patients to date (or sampled before `before`) whose first isolate in the population has this
+    antibiogram (analysis 52)."""
     x = ph.upto(ds.isolates, as_of)
     x = x[x.organism == organism]
+    if before is not None:
+        x = x[x.sample_date < ph.ts(before)]
     if marker:
         pop = x[x[marker] == 1]
         label = ph.organism_label(organism, marker)
@@ -61,24 +67,22 @@ def _cluster_signal(ds, ep, as_of, rule) -> dict:
     ward, org, prof, marker = ep["ward"], ep["organism"], ep["profile"], ep["marker"]
     first = ph.day_date(ep["first_sample_day"])
     mt = cluster_matches(ds, as_of, ward, org, prof, first)
-    bg = background(ds, as_of, org, prof, marker)
-    by = list(mt["elsewhere_by_ward"].items())
-    k = min(len(by), 3)
+    bg = background(ds, as_of, org, prof, marker, before=first)
     slots = {"ward": ward, "ward_label": ph.ward_label(ward), "organism_label": ph.organism_label(org, marker), "pattern": prof,
              "n_elsewhere": mt["n_elsewhere_before"], "bg_share": bg["bg_share"], "bg_n": bg["bg_n"], "bg_label": bg["bg_label"]}
     if mt["n_same_ward_before"]:
         slots.update({"n_same_before": mt["n_same_ward_before"], "last_same_date": mt["last_same_ward_date"]})
-    for i, (w, n) in enumerate(by[:2], start=1):
+    for i, (w, n) in enumerate(mt["elsewhere_by_ward"].items(), start=1):
         slots[f"w{i}"], slots[f"n{i}"] = w, n
-    if k == 3:
-        slots["n_other"] = sum(n for _, n in by[2:])
+    k = len(mt["elsewhere_by_ward"])
     tid = f"ob_seen_before__{'known' if mt['n_same_ward_before'] else 'new'}__{k}__{bg['strength']}"
     evidence = {
         "filter": {"ward": None, "specimen": None, "organism": org, "drug": None, "date_from": None,
                    "date_to": ph.iso(first - pd.Timedelta(days=1)), "rule": rule, "profile": prof, "isolate_ids_only": True},
         "counts": {**{k_: v for k_, v in mt.items() if k_ != "isolate_ids"}, **bg},
         "method": ("seen before (analysis 52): earlier patients (first isolate each) with the same organism and exact "
-                   "antibiogram before the cluster's first sample, by unit; background share among the population to date"),
+                   "antibiogram before the cluster's first sample, by unit; background share among the population "
+                   "before the cluster"),
         "params": {"weak_share": WEAK_SHARE, "population": "marker" if marker else "organism with the same test panel"},
         "isolate_ids": mt["isolate_ids"],
         "cluster_id": S.signal_id(ph.KIND, ph.episode_key(ep)),
@@ -169,7 +173,7 @@ def matches(ds, signal) -> dict | None:
         return None
     m = signal["evidence"]["filter"].get("marker")
     return {**cluster_matches(ds, signal["as_of"], k["ward"], k["organism"], k["profile"], k["first_sample_date"]),
-            **background(ds, signal["as_of"], k["organism"], k["profile"], m), "label": LABEL}
+            **background(ds, signal["as_of"], k["organism"], k["profile"], m, before=k["first_sample_date"]), "label": LABEL}
 
 
 def _active_ids(ds, as_of) -> set:

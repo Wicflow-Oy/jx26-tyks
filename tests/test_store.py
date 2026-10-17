@@ -1,4 +1,5 @@
-"""Demo state: per-session isolation, shared seeds, the write cap, strict as-of visibility, revocation, audit."""
+"""Demo state: per-session isolation, shared seeds, the write cap, strict as-of visibility, revocation, alert input
+checks, audit."""
 import sqlite3
 
 import pytest
@@ -31,9 +32,11 @@ def _audit_rows(db) -> int:
 def test_seeds_are_visible_to_every_session_and_seeding_is_idempotent():
     store.seed_demo()
     seed_ids = [s["id"] for s in C.DEMO_ALERT_SEEDS]
-    for session in (A, B, store.ANONYMOUS):
+    for session in (A, B, store.ANONYMOUS, None):
         assert [a["id"] for a in store.alerts(session)] == seed_ids
     assert all(a["seed"] and a["approved_by_role"] == "Infection control" for a in store.alerts(A))
+    for seed, stored in zip(C.DEMO_ALERT_SEEDS, store.alerts(A), strict=True):
+        assert set(stored["resistant_to"]) == set(seed["resistant_to"]) and set(stored["drugs"]) == set(seed["drugs"])
 
 
 def test_sessions_do_not_see_each_others_rows():
@@ -71,6 +74,17 @@ def test_revoking_a_seed_hides_it_for_that_session_from_that_brief_on():
     assert _active(A, "2026-03-08") == ["seed-icu-mrsa-2026"]  # earlier dates unchanged
     assert _active(B, "2026-03-15") == ["seed-icu-mrsa-2026"]  # other sessions unchanged
     assert store.revoke_alert(A, "seed-icu-mrsa-2026", "2026-03-22")["revoked_on"] == "2026-03-16"  # idempotent
+    # going back in the replay and revoking from an earlier brief moves the revocation forward
+    assert store.revoke_alert(A, "seed-icu-mrsa-2026", "2026-03-08")["revoked_on"] == "2026-03-09"
+    assert _active(A, "2026-03-08") == []
+
+
+def test_only_an_alert_active_at_that_brief_can_be_revoked():
+    mine = _approve(A, as_of="2026-03-29")["id"]  # approved 30 Mar, expires 13 Apr
+    for before_or_after in ("2026-03-08", "2026-04-26"):
+        with pytest.raises(ValueError, match="not active"):
+            store.revoke_alert(A, mine, before_or_after)
+    assert mine in _active(A, "2026-03-29")
 
 
 def test_write_cap_per_session(monkeypatch):
@@ -147,7 +161,47 @@ def test_cds_feedback_takes_its_source_from_the_shown_card():
 
 
 def test_session_header_validation():
-    assert store.session_id(None) == store.ANONYMOUS
+    assert store.session_id(None) is None and store.session_id("") is None
     assert store.session_id(A) == A
-    with pytest.raises(ValueError):
-        store.session_id("<script>")
+    for bad in ("<script>", "short", store.ANONYMOUS):  # no header can claim the CDS Hooks bucket
+        with pytest.raises(ValueError):
+            store.session_id(bad)
+
+
+def test_a_caller_without_a_session_reads_the_seeds_and_can_never_approve_or_revoke():
+    _approve(A)
+    store.log_cds_feedback(store.ANONYMOUS, service_id="strainwatch-order-sign", card_uuid="card-1", outcome="overridden")
+    assert [a["id"] for a in store.alerts(None)] == [s["id"] for s in C.DEMO_ALERT_SEEDS]
+    assert store.feedback_summary(None, "2026-03-15") == [] and store.heads_ups(None, "2026-03-15") == []
+    for nobody in (None, store.ANONYMOUS):
+        with pytest.raises(ValueError, match=C.SESSION_HEADER):
+            store.revoke_alert(nobody, "seed-uro-esbl-2025", "2025-06-08")
+        with pytest.raises(ValueError, match=C.SESSION_HEADER):
+            _approve(nobody)
+        with pytest.raises(ValueError, match=C.SESSION_HEADER):
+            store.draft_heads_up(nobody, signal_id="phe-1a2b3c4d5e", as_of="2026-03-08", text="Heads-up for the ED.")
+    assert _active(A, "2025-06-08") == ["seed-uro-esbl-2025"]
+
+
+def test_alert_input_checks():
+    mine = _approve(A, wards=["ICU", "ICU"], drugs=["MEM", "CRO", "MEM"], resistant_to=["CLI", "FOX"],
+                    expires_on="2026-06-07")  # 90 days after the brief of 9 Mar: the longest allowed
+    assert (mine["wards"], mine["drugs"], mine["resistant_to"]) == (["ICU"], ["CRO", "MEM"], ["FOX", "CLI"])
+    assert _approve(A, message=" Possible cluster, ICU.\n\tTyping advised. ")["message"] == (
+        "Possible cluster, ICU. Typing advised.")
+    bad = [({"expires_on": "2026-06-08"}, "expires_on"), ({"expires_on": "9999-12-31"}, "expires_on"),
+           ({"expires_on": "2026-03-08"}, "expires_on"), ({"approved_by_role": "ward_doctor"}, "infection control"),
+           ({"message": "Typing advised.\u202e"}, "control"), ({"message": "MRSA\x00"}, "control"),
+           ({"message": "   "}, "empty"), ({"resistant_to": ["XYZ"]}, "resistant_to"), ({"wards": []}, "wards")]
+    for change, message in bad:
+        with pytest.raises(ValueError, match=message):
+            _approve(A, **change)
+
+
+def test_a_state_file_from_an_older_schema_starts_fresh(db):
+    with sqlite3.connect(db) as con:  # the alerts table as it was before resistant_to
+        con.execute("DROP TABLE alerts")
+        con.execute("CREATE TABLE alerts (id TEXT PRIMARY KEY, session TEXT NOT NULL)")
+        con.execute("PRAGMA user_version = 0")
+    store.seed_demo()
+    assert [a["id"] for a in store.alerts(A)] == [s["id"] for s in C.DEMO_ALERT_SEEDS]

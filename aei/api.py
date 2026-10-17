@@ -3,9 +3,10 @@
 - The dataset loads once at startup. Without it the server still starts: /api/health says data_loaded=false and the
   data endpoints answer 503.
 - Every view takes one as-of Sunday inside the replay range (or the brief's `monday`), so all screens agree.
-- Writes belong to the browser's random X-Demo-Session id (see store.py); the demo seeds are visible to every session.
-- Public-demo hygiene: per-IP rate limit, X-Robots-Tag on every response, robots.txt disallows all, no CORS, and no
-  request logging (uvicorn runs with --no-access-log; this module logs startup problems only).
+- Writes need the browser's random X-Demo-Session id; a read without it sees the demo seeds only (see store.py).
+- Public-demo hygiene: per-IP rate limit, request bodies up to 64 KB, X-Robots-Tag on every response (errors included),
+  robots.txt disallows all, no CORS, and no request logging (uvicorn runs with --no-access-log; this module logs
+  startup problems and unexpected errors, by path only).
 - The static UI in web/ is mounted at / after every API route.
 """
 import datetime as dt
@@ -17,12 +18,13 @@ from typing import Annotated, Literal
 
 import pandas as pd
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import brief, cds, data, jev, narrator, precompute, store, views
+from . import brief, cds, data, jev, narrator, phenotype_rules, precompute, store, views
 from . import config as C
 from .detectors.policy import policy_states
 from .narrator.base import AUDIENCES, LANGUAGES
@@ -37,6 +39,10 @@ LINE_LIST_MAX = 200  # newest rows shown; the epi curve and `n` always count eve
 CLUSTER_KINDS = {"phenotype_cluster", "thl_rule"}
 FLAGS = ("esbl", "mrsa", "vre", "cpe")
 ROBOTS_TXT = "User-agent: *\nDisallow: /\n"
+MAX_BODY_BYTES = 64 * 1024  # the largest real request, a CDS Hooks call, is a few KB
+# What a cluster's marker implies beyond its reported R, as the shared phenotype rules apply it: MRSA, every other
+# beta-lactam on the panel (EUCAST Staphylococcus expert rule 1); ESBL, cefuroxime and ceftriaxone (local rule).
+MARKER_R = {"mrsa": phenotype_rules.MRSA_R, "esbl": C.LOCAL_ESBL_R}
 
 
 # --------------------------------------------------------------------------- app, startup, guards
@@ -92,13 +98,28 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse({"error": code, "message": message}, status_code=status)
 
 
+def _body_too_large(request: Request) -> bool:
+    """A chunked body has no declared length; it is refused rather than read to find out."""
+    declared = int(request.headers.get("content-length") or 0)  # the HTTP server has already checked it is a number
+    return declared > MAX_BODY_BYTES or "transfer-encoding" in request.headers
+
+
 @app.middleware("http")
 async def guard(request: Request, call_next):
+    """Rate limit and body cap, then the route. An unexpected error becomes a plain JSON 500: the traceback goes to the
+    log, never to the client. Every response carries X-Robots-Tag."""
     if request.url.path.startswith(RATE_LIMITED_PATHS) and not LIMITER.allow(client_ip(request)):
         response = _error(429, "rate_limited", "Too many requests from this address. Please wait a minute and try again.")
         response.headers["Retry-After"] = "60"
+    elif _body_too_large(request):
+        response = _error(413, "too_large",
+                          f"Request bodies are limited to {MAX_BODY_BYTES // 1024} KB, sent with a Content-Length.")
     else:
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            log.exception("unexpected error on %s", request.url.path)  # the path only: no query string or body
+            response = _error(500, "server_error", "Something went wrong on the server. Please try again.")
     response.headers["X-Robots-Tag"] = "noindex, nofollow"
     return response
 
@@ -123,6 +144,13 @@ async def http_error(request: Request, exc: StarletteHTTPException) -> JSONRespo
     return _error(exc.status_code, codes.get(exc.status_code, "error"), str(exc.detail))
 
 
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """The first problem in the same shape as every other error, e.g. "body.wards: Input should be a valid list"."""
+    first = exc.errors()[0]
+    return _error(422, "invalid_request", f"{'.'.join(map(str, first['loc']))}: {first['msg']}")
+
+
 # --------------------------------------------------------------------------- request dependencies
 def get_ds(request: Request) -> data.Dataset:
     ds = getattr(request.app.state, "ds", None)
@@ -131,11 +159,17 @@ def get_ds(request: Request) -> data.Dataset:
     return ds
 
 
-def get_session(x_demo_session: Annotated[str | None, Header(alias=C.SESSION_HEADER)] = None) -> str:
-    try:
-        return store.session_id(x_demo_session)
-    except ValueError as e:
-        raise HTTPException(400, str(e)) from None
+def get_viewer(x_demo_session: Annotated[str | None, Header(alias=C.SESSION_HEADER)] = None) -> str | None:
+    """Reads show this session's rows plus the seeds; without the header, the seeds only."""
+    return store.session_id(x_demo_session)
+
+
+Viewer = Annotated[str | None, Depends(get_viewer)]
+
+
+def get_session(viewer: Viewer) -> str:
+    """Writes need the header. Checked before any work, because drafting a heads-up may call the model."""
+    return store.require_session(viewer)
 
 
 def _date(value: str, name: str) -> dt.date:
@@ -228,20 +262,43 @@ class OrderFeedbackIn(Dated):
     changed_to: Code | None = None
 
 
+class HookContext(BaseModel):
+    model_config = ConfigDict(extra="allow")  # userId, draftOrders, extension...: read by cds.parse_hook_request
+    patientId: Code | None = None
+
+
 class HookIn(BaseModel):
     """A CDS Hooks 2.0 request. Other fields (fhirServer, prefetch...) are accepted and ignored."""
     model_config = ConfigDict(extra="allow")
     hook: str
     hookInstance: str
-    context: dict
+    context: HookContext
+
+
+class Coding(BaseModel):
+    model_config = ConfigDict(extra="allow")  # system and display are accepted and not stored
+    code: Code
+
+
+class OverrideReason(BaseModel):
+    model_config = ConfigDict(extra="allow")  # the user's comment is accepted and never stored
+    reason: Coding | None = None
+
+
+class AcceptedSuggestion(BaseModel):
+    id: Code
 
 
 class HookFeedbackItem(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    card: str
-    outcome: str
-    overrideReason: dict | None = None
-    acceptedSuggestions: list[dict] = Field(default_factory=list, max_length=10)
+    model_config = ConfigDict(extra="allow")  # outcomeTimestamp is accepted; the store keeps its own time
+    card: Code
+    outcome: Code
+    overrideReason: OverrideReason | None = None
+    acceptedSuggestions: list[AcceptedSuggestion] = Field(default_factory=list, max_length=10)
+
+    def reason_code(self) -> str | None:
+        reason = self.overrideReason.reason if self.overrideReason else None
+        return reason.code if reason else None
 
 
 class HookFeedbackIn(BaseModel):
@@ -270,6 +327,16 @@ def _linked(alert: dict, item: dict) -> bool:
     if alert["signal_id"] is not None:
         return alert["signal_id"] == item["id"]
     return item["kind"] in CLUSTER_KINDS and item["ward"] in alert["wards"] and item["organism"] == alert["organism"]
+
+
+def _resistant_to(signal: dict | None) -> list[str]:
+    """The antibiogram a cluster shares: its reported R plus what its marker implies, as for the demo seeds
+    (CONTRACTS.md section 7b). A signal without one shared antibiogram gives none; the alert's drugs still warn."""
+    f = (signal or {}).get("evidence", {}).get("filter") or {}
+    if not f.get("profile"):
+        return []
+    reported_r = {token.split(":")[0] for token in f["profile"].split() if token.endswith(":R")}
+    return sorted(reported_r | MARKER_R.get(f.get("marker"), set()))
 
 
 def _wards(ward: str | None) -> list[str]:
@@ -363,7 +430,7 @@ def filters(ds: Ds) -> dict:
 
 # --------------------------------------------------------------------------- infection control: brief, replay, case file
 @app.get("/api/brief")
-def get_brief(ds: Ds, session: Session, as_of: AsOf, window: str = "4w", rule: str = "readme_period") -> dict:
+def get_brief(ds: Ds, session: Viewer, as_of: AsOf, window: str = "4w", rule: str = "readme_period") -> dict:
     """The Monday brief, each item with this session's linked active alert and latest heads-up (or None)."""
     out = brief.build_brief(ds, as_of, window=window, rule=rule)
     alerts, heads_ups = store.alerts(session, as_of), store.heads_ups(session, as_of)
@@ -396,7 +463,7 @@ def feed(ds: Ds, as_of: AsOf) -> dict:
 
 
 @app.get("/api/signals/{signal_id}")
-def case_file(signal_id: str, ds: Ds, session: Session, as_of: AsOf) -> dict:
+def case_file(signal_id: str, ds: Ds, session: Viewer, as_of: AsOf) -> dict:
     """Everything behind one brief item: the signal, its line list and epi curve, seen-before matches, step-up
     evidence, and this session's linked alerts and heads-ups."""
     signal = _signal(ds, as_of, signal_id)
@@ -430,19 +497,21 @@ def approve_alert(body: AlertIn, ds: Ds, session: Session) -> dict:
     expires_on = _date(body.expires_on, "expires_on") if body.expires_on else None
     return store.approve_alert(
         session, signal_id=body.signal_id, as_of=as_of, wards=body.wards or (brief.units_of(signal) if signal else []),
-        drugs=body.drugs, message=body.message, approved_by_role=body.approved_by_role, expires_on=expires_on,
+        drugs=body.drugs, resistant_to=_resistant_to(signal), message=body.message,
+        approved_by_role=body.approved_by_role, expires_on=expires_on,
         organism=signal["organism"] if signal else None, specimen=signal["specimen"] if signal else None)
 
 
 @app.get("/api/alerts")
-def list_alerts(session: Session, as_of: AsOf) -> list[dict]:
+def list_alerts(session: Viewer, as_of: AsOf) -> list[dict]:
     """Alerts active on the brief's Monday (as_of + 1)."""
     return store.alerts(session, as_of)
 
 
 @app.post("/api/alerts/{alert_id}/revoke")
-def revoke_alert(alert_id: str, body: Dated, session: Session) -> dict:
-    return store.revoke_alert(session, alert_id, body.day())
+def revoke_alert(alert_id: str, session: Session, body: Dated | None = None) -> dict:
+    """Revoke from the brief of the given date on; without a body, from the last data week's brief."""
+    return store.revoke_alert(session, alert_id, (body or Dated()).day())
 
 
 @app.post("/api/heads-up", status_code=201)
@@ -464,7 +533,7 @@ def approve_heads_up(heads_up_id: str, session: Session, body: RoleIn | None = N
 
 @app.get("/api/feedback")
 @app.get("/api/order-feedback/summary")
-def feedback_summary(session: Session, as_of: AsOf) -> list[dict]:
+def feedback_summary(session: Viewer, as_of: AsOf) -> list[dict]:
     """Infection control's view of order-card outcomes per source: counts only, no user or patient ids."""
     return store.feedback_summary(session, as_of)
 
@@ -485,7 +554,7 @@ def validate(body: ValidateIn) -> dict:
 
 # --------------------------------------------------------------------------- the ward doctor: My ward and orders
 @app.get("/api/my-ward")
-def my_ward(ds: Ds, session: Session, as_of: AsOf, ward: str | None = None, specimen: str = "blood_wound",
+def my_ward(ds: Ds, session: Viewer, as_of: AsOf, ward: str | None = None, specimen: str = "blood_wound",
             organism: str | None = None, sex: str | None = None, age_band: str | None = None,
             setting: str | None = None, home_area: str | None = None, windows: str = "4w,12m",
             rule: str = "readme_period") -> dict:
@@ -493,7 +562,7 @@ def my_ward(ds: Ds, session: Session, as_of: AsOf, ward: str | None = None, spec
     view = views.my_ward(ds, as_of, ward, specimen_group=specimen, organism=organism, sex=sex, age_band=age_band,
                          setting=setting, windows=windows, rule=rule, home_area=home_area)
     alerts, states = store.alerts(session), policy_states(ds, as_of)
-    banners = {b["id"]: b for w in _wards(ward) for b in cds.banners(as_of, w, alerts, states)}
+    banners = {b["id"]: b for w in _wards(ward) for b in cds.banners(as_of, w, alerts, states, specimen_group=specimen)}
     return {**view, "banners": list(banners.values()),
             "signals": brief.signals_for(ds, as_of, ward=_wards(ward) if ward else None, rule=rule)}
 
@@ -507,10 +576,16 @@ def trend(ds: Ds, as_of: AsOf, drug: str, ward: str | None = None, specimen: str
 
 
 @app.post("/api/order-context")
-def order_context(body: OrderIn, ds: Ds, session: Session) -> dict:
+def order_context(body: OrderIn, ds: Ds, session: Viewer) -> dict:
     as_of = body.day()
     return cds.order_context(ds, as_of, body.patient_id, body.unit, body.indication, body.drug, body.stage,
                              store.alerts(session), policy_states(ds, as_of))
+
+
+@app.get("/api/order-drugs")
+def order_drugs(indication: str) -> list[dict]:
+    """The drug picker for one indication: the order drugs the order view can give numbers for."""
+    return cds.order_drugs(indication)
 
 
 @app.get("/api/patients/{patient_id}/history")
@@ -523,7 +598,7 @@ def patient_history(patient_id: str, ds: Ds, as_of: AsOf) -> dict:
 
 
 @app.get("/api/demo/scenarios")
-def demo_scenarios(ds: Ds, session: Session) -> list[dict]:
+def demo_scenarios(ds: Ds, session: Viewer) -> list[dict]:
     """The scenario picker: each scenario with the state it shows at signing for this session."""
     alerts, out = store.alerts(session), []
     for s in C.DEMO_SCENARIOS:
@@ -547,30 +622,33 @@ def cds_discovery() -> dict:
 
 
 @app.post("/cds-services/{service_id}")
-def cds_hook(service_id: str, body: HookIn, request: Request, ds: Ds, session: Session) -> dict:
+def cds_hook(service_id: str, body: HookIn, request: Request, ds: Ds, session: Viewer) -> dict:
     """order-select returns at most info cards; order-sign may return a warning. Every returned card is logged as
-    shown, because a later feedback call names only the card's uuid."""
+    shown, because a later feedback call names only the card's uuid. An EHR sends no session header: it sees the
+    seeds only, and its cards are logged under store.ANONYMOUS."""
     _service(service_id)
     parsed = cds.parse_hook_request(service_id, body.model_dump())
     parsed["as_of"] = parse_as_of(parsed["as_of"])
     cards = cds.hook_cards(ds, parsed, store.alerts(session), policy_states(ds, parsed["as_of"]))
     try:
         for c in cards:
-            store.log_order_feedback(session, card_key=c["uuid"], source_id=c["extension"][f"{cds.SLUG}.source"]["id"],
-                                     state=c["indicator"], outcome="shown", as_of=parsed["as_of"])
+            store.log_order_feedback(session or store.ANONYMOUS, card_key=c["uuid"],
+                                     source_id=c["extension"][f"{cds.SLUG}.source"]["id"], state=c["indicator"],
+                                     outcome="shown", as_of=parsed["as_of"])
     except store.WriteLimitReached:
         log.warning("CDS cards returned without logging them as shown: the session's write limit is reached")
     return {"cards": [_absolute_links(c, request) for c in cards]}
 
 
 @app.post("/cds-services/{service_id}/feedback")
-def cds_feedback(service_id: str, body: HookFeedbackIn, session: Session) -> dict:
-    """Only the override reason code is kept, never the user's comment."""
+def cds_feedback(service_id: str, body: HookFeedbackIn, session: Viewer) -> dict:
+    """Appended to the session's feedback log (store.ANONYMOUS for an EHR, which sends no session header); feedback
+    never changes an alert. Only the override reason code is kept, never the user's comment."""
     _service(service_id)
     for item in body.feedback:
-        store.log_cds_feedback(session, service_id=service_id, card_uuid=item.card, outcome=item.outcome,
-                               override_reason=((item.overrideReason or {}).get("reason") or {}).get("code"),
-                               accepted_suggestions=[s.get("id") for s in item.acceptedSuggestions])
+        store.log_cds_feedback(session or store.ANONYMOUS, service_id=service_id, card_uuid=item.card,
+                               outcome=item.outcome, override_reason=item.reason_code(),
+                               accepted_suggestions=[s.id for s in item.acceptedSuggestions])
     return {"logged": len(body.feedback)}
 
 

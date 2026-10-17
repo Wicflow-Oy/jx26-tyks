@@ -2,8 +2,9 @@
 with status against the previous week, a unit / home-area map and priority counts.
 
 - Detectors come only from the registry (`aei.detectors`), so the brief works while some are missing.
-- Status: `new` if the id was not active at as_of - 7 days, `ongoing` if it was; signals active last week but not now are
-  listed once as `resolved`.
+- Status: `new` if the id was not active at as_of - 7 days, `ongoing` if it was. A detector lists an item as `resolved`
+  in the week after it stops, with a resolved text (what was last flagged and the value now); the brief keeps it
+  only when it was active last week. Weekly lab checks (expert rules) have no resolved item.
 - Per-week signals are cached in memory and in `config.CACHE_DIR/signals/{as_of}.json` (other rules/windows get a suffix).
   A cache file is used only when its fingerprint (detector sources, templates, config, data shape) matches.
 - The data-quality section always carries a completeness line; the quiet section counts the units with no signal.
@@ -34,7 +35,6 @@ STATUS_ORDER = {"new": 0, "ongoing": 1, "resolved": 2}
 FOOTER = "Every number links to its count and filter. Text narrated from computed numbers only."
 CACHE_SCHEMA = "b2-signals-v1"
 DEFAULT_RULE, DEFAULT_WINDOW = "readme_period", "4w"
-NO_RESOLVED_KINDS = {"expert_rule"}  # weekly lab checks: no hits this week is not a "resolved" item
 
 _MEM: dict = {}
 _FP: dict = {}
@@ -146,21 +146,21 @@ def units_of(s: dict) -> list[str]:
     return [w for w in wards if w in C.WARD_LABELS]
 
 
+def _active(signals: list) -> list:
+    return [s for s in signals if s.get("status") != "resolved"]
+
+
 def _with_status(signals_now: list, signals_prev: list) -> list:
-    prev_ids = {s["id"] for s in signals_prev}
-    now_ids = set()
+    """`new` or `ongoing` against last week's active items; a detector's `resolved` item only if active last week."""
+    prev_ids = {s["id"] for s in _active(signals_prev)}
     out = []
     for s in signals_now:
         s = copy.deepcopy(s)
-        s["status"] = "ongoing" if s["id"] in prev_ids else "new"
-        now_ids.add(s["id"])
+        if s.get("status") != "resolved":
+            s["status"] = "ongoing" if s["id"] in prev_ids else "new"
+        elif s["id"] not in prev_ids:
+            continue  # it was not shown as active last week, so there is nothing to resolve
         out.append(s)
-    for s in signals_prev:
-        if s["id"] not in now_ids and s.get("kind") not in NO_RESOLVED_KINDS:
-            s = copy.deepcopy(s)
-            s["last_active"] = s.get("as_of")
-            s["status"] = "resolved"
-            out.append(s)
     return out
 
 
@@ -180,7 +180,7 @@ def _signals_at(ds, as_of, rule, window, cache=True) -> tuple[list, dict]:
 def signals_for(ds, as_of, ward=None, rule: str = DEFAULT_RULE, window: str = DEFAULT_WINDOW) -> list[dict]:
     """Active (new or ongoing) signals at `as_of` touching a unit (str or list of codes); all active signals if None."""
     sigs, _ = _signals_at(ds, as_of, rule, window)
-    active = [s for s in sigs if s["status"] != "resolved"]
+    active = _active(sigs)
     if ward is None:
         return sorted(active, key=_sort_key)
     wanted = set(_as_list(ward))
@@ -246,7 +246,7 @@ def build_brief(ds, as_of, window: str = DEFAULT_WINDOW, rule: str = DEFAULT_RUL
     """The Monday brief for data up to `as_of` (a Sunday); dated as_of + 1 day. Strictly as-of."""
     as_of = _day(as_of)
     sigs, report = _signals_at(ds, as_of, rule, window, cache)
-    active = [s for s in sigs if s["status"] != "resolved"]
+    active = _active(sigs)
     counts = _counts(active)
     mp = _build_map(ds, active)
     by_section = {k: [] for k, _ in SECTIONS}
@@ -293,12 +293,14 @@ def _weeks_arg(weeks) -> list[str]:
 
 def precompute(ds, weeks="all", rule: str = DEFAULT_RULE, window: str = DEFAULT_WINDOW) -> list[dict]:
     """Compute and cache per-week signals. `weeks`: "all" (the replay range plus the week before it), "demo", or an
-    iterable of as-of dates / week numbers. Returns [{as_of, monday, n_signals, n_p1, seconds}] in date order."""
+    iterable of as-of dates / week numbers. Returns [{as_of, monday, n_signals, n_p1, seconds}] in date order; the
+    counts are the week's active items, as in the brief header."""
     out = []
     for a in _weeks_arg(weeks):
         t = time.perf_counter()
         sigs, _ = week_signals(ds, a, rule, window, cache=True)
-        out.append({"as_of": a, "monday": _day(pd.Timestamp(a) + pd.Timedelta(days=1)), "n_signals": len(sigs),
-                    "n_p1": sum(1 for s in sigs if s.get("priority") == "P1"),
+        active = _active(sigs)
+        out.append({"as_of": a, "monday": _day(pd.Timestamp(a) + pd.Timedelta(days=1)), "n_signals": len(active),
+                    "n_p1": sum(1 for s in active if s.get("priority") == "P1"),
                     "seconds": round(time.perf_counter() - t, 3)})
     return out

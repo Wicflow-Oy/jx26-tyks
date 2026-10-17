@@ -408,7 +408,9 @@ def _summary(ds, ep, as_of) -> dict:
     org_panel = hist[(hist.organism == org) & (hist.profile.map(panel_of) == panel)]
     f_org = float((org_panel.profile == prof).mean()) if len(org_panel) else 0.0
     f_used = max(f_org, 0.5 / max(len(org_panel), 1))
-    n_ward_year = int(org_panel[org_panel.ward_code == ward].patient_id.nunique())
+    ward_year = org_panel[org_panel.ward_code == ward]
+    n_ward_year = int(ward_year.patient_id.nunique())
+    observed = int(ward_year[ward_year.profile == prof].patient_id.nunique())
     mu = f_used * n_ward_year
     lo, hi = poisson_range(mu)
     if marker:
@@ -420,7 +422,8 @@ def _summary(ds, ep, as_of) -> dict:
     else:
         bg_n, bg_share, bg_label = len(org_panel), f_org, short_org(org)
     return {"marker": marker, "first": first, "pop": pop, "n_patients": n_patients, "n_share": n_share,
-            "f_org": f_org, "f_used": f_used, "n_ward_year": n_ward_year, "expected_per_year": mu,
+            "f_org": f_org, "f_used": f_used, "n_ward_year": n_ward_year, "observed_year_before": observed,
+            "expected_per_year": mu,
             "expected_low": lo, "expected_high": hi, "bg_n": bg_n, "bg_share": bg_share, "bg_label": bg_label,
             "specimens": sorted(pop.specimen.unique().tolist())}
 
@@ -432,7 +435,7 @@ def build_signal(ds, ep, as_of, rule="readme_period") -> dict:
     slots = {"ward": ward, "ward_label": ward_label(ward), "organism_label": organism_label(org, marker),
              "n_patients": sm["n_patients"], "n_share": sm["n_share"], "pattern": prof, "first_date": iso(first),
              "expected_low": sm["expected_low"], "expected_high": sm["expected_high"],
-             "bg_share": sm["bg_share"], "bg_label": sm["bg_label"]}
+             "observed_year_before": sm["observed_year_before"], "bg_share": sm["bg_share"], "bg_label": sm["bg_label"]}
     template_id = "ob_phenotype_marker" if marker else "ob_phenotype_plain"
     ach = competing_explanations(ds, ward, org, first, as_of, marker=marker, pattern=prof)
     h1 = next((h["rating"] for h in ach["hypotheses"] if h["id"] == "H1"), "weak")
@@ -450,6 +453,7 @@ def build_signal(ds, ep, as_of, rule="readme_period") -> dict:
                    "min_p": ep["min_p"], "share_in_organism_panel_year_before": sm["f_org"],
                    "share_used_in_test": sm["f_used"], "unit_patients_with_organism_panel_year_before": sm["n_ward_year"],
                    "expected_per_year": round(sm["expected_per_year"], 3),
+                   "unit_patients_with_antibiogram_year_before": sm["observed_year_before"],
                    "background_n": sm["bg_n"], "background_share": sm["bg_share"]},
         "method": ("phenotype cluster (spec detector, analysis 09_leadtime): daily, panel-aware, 26-week learning, "
                    "rarity gate < 15% of the organism and panel in the prior 52 weeks, binomial p < 1e-4 on distinct "

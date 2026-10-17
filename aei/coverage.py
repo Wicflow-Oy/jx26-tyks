@@ -1,42 +1,43 @@
 """Coverage cells for My ward (CONTRACTS.md section 4.1). Ported from the analysis scripts 11_fixes, 26_trace and 36b.
 
-Coverage semantics (11_fixes / 26_trace `s_col`, kept exactly):
-- an isolate is covered when it is S to the drug; a combination ("MEM+VAN") is covered when any member is covered;
-- EUCAST intrinsic (`config.INTRINSIC`) and "no breakpoint" (`config.NO_BREAKPOINT`) pairs count as tested and NOT covered;
-- S. aureus cefuroxime, ceftriaxone, piperacillin-tazobactam and meropenem follow the cefoxitin screen, and S. aureus
-  ampicillin is not reported (penicillinase unknown); E. faecalis piperacillin-tazobactam and meropenem follow ampicillin;
-- any other untested pair is excluded from `tested`.
+Coverage semantics: an isolate is covered when its effective result (`phenotype_rules.effective`, shared with the order
+view) is S, not covered when it is R, and left out of `tested` when it is untested. A combination ("MEM+VAN") is covered
+when any member is covered. Intrinsic and no-breakpoint pairs are R: they count as tested and not covered.
 
 Estimate rule (by `stats.n_state` of the tested count):
 - `ok` (>= 30): the observed share with its Jeffreys interval;
 - `low_n` (10..29): the stabilised estimate, i.e. the 36b "window WISCA". Each organism's window share is pooled with
-  k = POOLING_K pseudo-isolates toward the hospital-wide as-of rate for that organism (same specimen group), and the
-  organism mix is a Dirichlet over the window counts plus 5 pseudo-isolates of the hospital mix. Median and 2.5/97.5
-  percentiles of COVERAGE_DRAWS draws from a fresh `stats.rng()` (so every cell is reproducible on its own);
+  k = POOLING_K pseudo-isolates toward the hospital-wide as-of rate for that organism (same specimen group), on top of a
+  Jeffreys Beta(1/2, 1/2) prior, and the organism mix is a Dirichlet over the window counts plus 5 pseudo-isolates of
+  the hospital mix. Median and 2.5/97.5 percentiles of DRAWS draws from a fresh `stats.rng()` (so every cell is
+  reproducible on its own);
 - `not_enough_data` (< 10): no percentage at all. The observed x of n is always present.
 
 The "changed" flag runs `stats.change_test` on NOT-covered counts against the unit's prior 52 weeks, in both directions
-(more not-covered = coverage down; fewer = coverage up), each at `config.CHANGE_ALPHA`.
+(more not-covered = coverage down; fewer = coverage up), each at `config.CHANGE_ALPHA`. It is None for a cell with no
+percentage and when the caller has no full prior year.
 """
 from dataclasses import dataclass
+from functools import cache
 
 import numpy as np
 import pandas as pd
 
 from . import config as C
 from . import stats
+from .phenotype_rules import effective
 
 KEYS = tuple(C.DRUGS) + tuple(C.COMBOS)          # every single drug and combination a cell can be built for
 KEY_INDEX = {k: i for i, k in enumerate(KEYS)}
 RAW_INDEX = {d: i for i, d in enumerate(C.DRUGS)}
 FLAGS = ("esbl", "mrsa", "vre", "cpe")
 MIX_PSEUDO = 5                                     # hospital-mix pseudo-isolates in the organism-mix prior (26_trace)
+# Against a 400,000-draw run, 4,000 draws printed another integer in 41% of stabilised cells (my-ward #5); 40,000 draws
+# in 16%, never by more than 1 point, and a 52-week trend still takes under its 1 s budget.
+DRAWS = 40_000
+SPECIES_R = ("no_breakpoint", "intrinsic")         # EUCAST makes the species R whatever the test says
 LOCAL_SETTING = 0.80                               # stewardship's local coverage line (CONTRACTS 4.1)
 LOCAL_SETTING_LABEL = "local setting, set by stewardship"
-
-_SA, _EF = "Staphylococcus aureus", "Enterococcus faecalis"
-_SA_FOLLOW_FOX = ("CXM", "CRO", "TZP", "MEM")
-_EF_FOLLOW_AMP = ("TZP", "MEM")
 
 
 def parts(key: str) -> tuple[str, ...]:
@@ -68,27 +69,16 @@ def short_organism(name: str) -> str:
     return f"{bits[0][0]}. {' '.join(bits[1:])}" if len(bits) > 1 else str(name)
 
 
-def never_covered(organism: str, drug: str) -> bool:
-    return drug in C.INTRINSIC.get(organism, ()) or drug in C.NO_BREAKPOINT.get(organism, ())
+@cache
+def species_reason(organism: str, drug: str) -> str | None:
+    """The EUCAST reason ("no_breakpoint" or "intrinsic") when every isolate of the species is R to the drug, else None."""
+    reason = effective(pd.DataFrame({"organism": [organism]}), drug)[1].iat[0]
+    return reason if reason in SPECIES_R else None
 
 
 def _s_values(df: pd.DataFrame, drug: str) -> np.ndarray:
-    """1.0 covered, 0.0 not covered, NaN untested, for one drug, honouring the 26_trace rules (vectorised `s_col`)."""
-    col = df[drug]
-    v = np.where(col.notna().to_numpy(), (col == "S").to_numpy(dtype=float), np.nan)
-    org = df["organism"].to_numpy()
-    if drug in _SA_FOLLOW_FOX:
-        m = org == _SA
-        v[m] = (df["FOX"] == "S").to_numpy(dtype=float)[m]
-    if drug == "AMP":
-        v[org == _SA] = np.nan
-    if drug in _EF_FOLLOW_AMP:
-        m = org == _EF
-        v[m] = (df["AMP"] == "S").to_numpy(dtype=float)[m]
-    for o in np.unique(org):
-        if never_covered(o, drug):
-            v[org == o] = 0.0
-    return v
+    """1.0 covered, 0.0 not covered, NaN untested, for one drug: the shared effective result."""
+    return effective(df, drug)[0].map({"S": 1.0, "R": 0.0}).to_numpy(dtype=float)
 
 
 def indicator_matrix(df: pd.DataFrame) -> np.ndarray:
@@ -148,7 +138,7 @@ def counts_of(rows: pd.DataFrame, orgs: tuple | None = None) -> Counts:
     return counts_from_arrays(orgs, org_code, indicator_matrix(rows), raw_matrix(rows), flags)
 
 
-def stabilised(win: Counts, ref: Counts, key: str, k: float = C.POOLING_K, sims: int = C.COVERAGE_DRAWS,
+def stabilised(win: Counts, ref: Counts, key: str, k: float = C.POOLING_K, sims: int = DRAWS,
                rng: np.random.Generator | None = None) -> dict | None:
     """36b window WISCA for one key: window shares pooled per organism toward the reference (hospital as-of) rate.
 
@@ -160,8 +150,10 @@ def stabilised(win: Counts, ref: Counts, key: str, k: float = C.POOLING_K, sims:
     rng = stats.rng() if rng is None else rng
     ph = (ref.cov[keep, j] + 0.5) / (ref.tst[keep, j] + 1)
     wc, wt = win.cov[keep, j], win.tst[keep, j]
-    a = wc + k * ph + 1e-6
-    b = (wt - wc) + k * (1 - ph) + 1e-6
+    # The Jeffreys half on each side keeps an organism's share from collapsing to a point when the hospital rate is
+    # about 0 or 1 (k * (1 - ph) ~ 0.002 for E. coli meropenem gave 11 of 11 as "100 [100-100]"; my-ward #1).
+    a = wc + k * ph + 0.5
+    b = (wt - wc) + k * (1 - ph) + 0.5
     theta = rng.beta(a[:, None], b[:, None], size=(int(keep.sum()), sims))
     hn = ref.n[keep]
     pis = rng.dirichlet(win.n[keep] + hn / hn.sum() * MIX_PSEUDO, sims)
@@ -176,6 +168,11 @@ def untested(win: Counts, key: str) -> list[tuple[str, int]]:
     gap = win.n - win.tst[:, j]
     out = [(o, int(g)) for o, g in zip(win.orgs, gap) if g > 0]
     return sorted(out, key=lambda t: (-t[1], t[0]))
+
+
+def has_result(c: Counts, key: str) -> bool:
+    """Whether any result for the key rests on a lab result (reported, or inferred from one), not on the species alone."""
+    return any(c.tst[i, KEY_INDEX[d]] > 0 and species_reason(o, d) is None for d in parts(key) for i, o in enumerate(c.orgs))
 
 
 def _changed(covered: int, tested: int, prior: Counts | None, anchor: Counts | None, j: int) -> dict | None:
@@ -223,12 +220,15 @@ def cell_from_counts(win: Counts, key: str, prior: Counts | None = None, hosp: C
         estimate = ({"pct": observed["pct"], "ci": observed["ci"], "method": "observed"} if s is None else
                     {"pct": s["pct"], "ci": s["ci"], "method": "stabilised", "k": C.POOLING_K})
     share = tested / n_iso if n_iso else None
+    anchor = hosp_prior if hosp_prior is not None else hosp
+    # a change is never claimed next to "not enough data" (my-ward #4)
+    changed = None if state == "not_enough_data" else _changed(covered, tested, prior, anchor, j)
     return {
         "drug": key, "label": label(key), "aware": aware(key),
         "n_isolates": n_iso, "observed": observed, "estimate": estimate, "state": state,
         "eligible": None if share is None else bool(share >= C.ELIGIBLE_MIN_TESTED_SHARE - 1e-12),
         "tested_share": share,
-        "changed": _changed(covered, tested, prior, hosp_prior if hosp_prior is not None else hosp, j),
+        "changed": changed,
         "below_local_setting": None if estimate["pct"] is None else bool(estimate["pct"] < LOCAL_SETTING),
     }
 

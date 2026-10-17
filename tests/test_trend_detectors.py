@@ -12,9 +12,10 @@ import pandas as pd
 import pytest
 
 from aei import config as C
-from aei import data, render, templates
+from aei import data, render, stats, templates
 from aei import detectors as registry
 from aei.detectors import completeness, expert_rules, outlier, policy, resistance_change
+from aei.templates_trends import MAX_OUTLIER_PAIRS
 from aei.templates_trends import TEMPLATES as TREND_TEMPLATES
 
 MINE = [policy, resistance_change, outlier, expert_rules, completeness]
@@ -104,6 +105,18 @@ def test_policy_latest_and_crossed_on_runs(ds):
     assert policy.policy_states(ds, "2026-07-19")[0]["crossed_on"] == "2026-07-12"  # a new run after the 5 Jul dip
 
 
+def test_policy_resolved_item_shows_last_flagged_and_now(ds):
+    """Brief D5: the week after the line is crossed back, the item says what was flagged and what the rate is now."""
+    (s,) = policy.detect(ds, "2026-07-05")
+    assert s["status"] == "resolved" and s["advice"] is None
+    assert s["text"] == ("Trimethoprim: urinary E. coli in women in primary care. Resolved. Last flagged week ending "
+                         "28 Jun 2026: 20.1% resistant (158 of 787); now 19.7% (156 of 790, last 52 weeks), below the "
+                         "local 20% line.")
+    assert (s["evidence"]["counts"]["resistant"], s["evidence"]["counts"]["tested"]) == (156, 790)
+    assert policy.detect(ds, "2026-07-12")[0]["status"] == "new"  # back above the line: a new run
+    assert policy.detect(ds, "2026-08-02") == []  # resolved items are listed for one week only
+
+
 def test_policy_30d_rule_is_below_the_line(ds):
     (st,) = policy.policy_states(ds, "2026-06-21", rule="30d")
     assert render.fmt(st["rate"], "pct1") == "19.9%" and not st["active"]
@@ -133,11 +146,14 @@ def test_expert_rule_goldens(ds):
     c = expert_rules.rule_counts(ds.isolates)
     assert c["esbl_ceph_s"] == {"checked": 517, "hits": 0}
     assert c["mrsa_fox_s"] == {"checked": 111, "hits": 0}
-    _, h3 = expert_rules.masks(ds.isolates, "cro_r_amp_s")
-    _, h4 = expert_rules.masks(ds.isolates, "cro_r_cxm_s")
-    assert int((h3 | h4).sum()) == 109
-    odd = ds.isolates[h3 | h4].organism.value_counts().to_dict()
-    assert odd == {"Escherichia coli": 64, "Klebsiella pneumoniae": 45}  # 40_esbl_flag's split of the 109
+    # Re-pinned from 109 (two overlapping rules, E. coli and K. pneumoniae only): one merged check over every species
+    # with EUCAST cefuroxime breakpoints (brief D7, clinical D-L6). The 109 of 40_esbl_flag are all inside it.
+    _, cro = expert_rules.masks(ds.isolates, "cro_r_amp_or_cxm_s")
+    assert c["cro_r_amp_or_cxm_s"]["hits"] == int(cro.sum()) == 139
+    assert ds.isolates[cro].organism.value_counts().to_dict() == {
+        "Escherichia coli": 64, "Klebsiella pneumoniae": 45, "Proteus mirabilis": 19, "Klebsiella oxytoca": 11}
+    assert c["tzp_r_amp_s"]["hits"] == 276  # new rule (clinical D-L6; EUCAST Expert Rules v3.3 rule 1)
+    assert set(c) == {r["id"] for r in C.EXPERT_RULES}
 
 
 def test_expert_rules_week(ds):
@@ -150,6 +166,8 @@ def test_expert_rules_week(ds):
         assert len(rows) == s["slots"]["n_results"] == len(ids)
         assert rows.sample_date.max() <= end and rows.sample_date.min() > end - pd.Timedelta(days=7)
         assert s["ward"] is None  # lab-wide check, units listed in the text
+        assert s["evidence"]["method"].startswith(C.EXPERT_RULES_LABEL)
+    assert len({s["evidence"]["params"]["rule_id"] for s in sigs}) == len(sigs)  # one item per rule (brief D7)
 
 
 # ---------------------------------------------------------------- completeness
@@ -159,13 +177,23 @@ def test_completeness_phcs_gap(ds):
     assert s["ward"] == "PHC-S" and s["priority"] == "P2" and s["section"] == "data_quality"
     assert s["slots"]["expected"] == 51 and s["evidence"]["counts"]["cultures_this_week"] == 0
     assert s["evidence"]["filter"]["date_from"] == "2025-12-08" and s["evidence"]["filter"]["date_to"] == "2025-12-14"
-    assert "Data gap, cause unknown; not zero resistance" in s["text"]
+    # Re-pinned: a data gap says nothing about resistance, so the text no longer mentions it (audit #5)
+    assert s["text"] == "Health centre South: no cultures this week (usually 51 a week). Data gap, cause unknown."
 
 
 def test_completeness_only_gap_in_replay(ds):
     weeks = pd.date_range(data.week_end(55), C.DATA_END, freq="7D")
-    flagged = [(str(w.date()), s["ward"]) for w in weeks for s in completeness.detect(ds, w)]
-    assert flagged == [("2025-12-14", "PHC-S")]
+    listed = [(str(w.date()), s["ward"], s["status"]) for w in weeks for s in completeness.detect(ds, w)]
+    assert listed == [("2025-12-14", "PHC-S", "new"), ("2025-12-21", "PHC-S", "resolved")]
+
+
+def test_completeness_resolved_item_shows_this_weeks_cultures(ds):
+    """Brief D5: the week after the gap PHC-S sent 48 cultures; the item says so instead of repeating 'no cultures'."""
+    (s,) = completeness.detect(ds, "2025-12-21")
+    assert s["text"] == ("Health centre South: resolved, 48 cultures this week. Last flagged week ending 14 Dec 2025: "
+                         "0 cultures (usually 51 a week), cause unknown.")
+    week = ds.cultures[(ds.cultures.sample_date > "2025-12-14") & (ds.cultures.sample_date <= "2025-12-21")]
+    assert (week.ward_code == "PHC-S").sum() == 48
 
 
 def test_completeness_ok_line(ds):
@@ -179,6 +207,11 @@ def test_resistance_change_demo_cells(ds):
     icu = [s for s in resistance_change.detect(ds, "2026-03-08") if s["ward"] == "ICU"]
     assert [(s["organism"], s["drug"]) for s in icu] == [("Staphylococcus aureus", "FOX")]
     assert icu[0]["slots"]["counts"] == [3, 8] and icu[0]["priority"] == "P2" and icu[0]["section"] == "changed"
+    # A positive cefoxitin screen is MRSA (clinical D-L7), and 3 of 8 is too few for a percentage (brief D3)
+    assert icu[0]["text"] == ("Intensive care unit · MRSA (cefoxitin screen positive): 3 of 8 S. aureus in the last "
+                              "4 weeks vs 1 of 70 (1%) in the 52 weeks before. Changed; watch next week.")
+    rows = ds.isolates[ds.isolates.isolate_id.isin(icu[0]["evidence"]["isolate_ids"])]
+    assert len(rows) == 8 and (rows.FOX == "R").sum() == 3 and set(rows.ward_code) == {"ICU"}
     uro = {(s["ward"], s["drug"]) for s in resistance_change.detect(ds, "2025-06-08")}
     assert ("URO", "CRO") in uro
 
@@ -197,19 +230,61 @@ def test_resistance_change_cell_counts(ds):
     assert r.changed and r.p < C.CHANGE_ALPHA
 
 
-def test_outlier_fires_on_the_two_clusters(ds):
-    icu = outlier.detect(ds, "2026-03-08")
-    assert [s["ward"] for s in icu] == ["ICU"] and icu[0]["priority"] == "P3" and icu[0]["section"] == "changed"
-    assert icu[0]["slots"]["high"][0] >= outlier.MIN_HIGH_CELLS
-    assert "S. aureus cefoxitin" in icu[0]["text"]
+@pytest.mark.parametrize("as_of", ["2026-03-15", "2026-03-29", "2025-06-22"])
+def test_resistance_change_shows_no_percentage_below_ten(ds, as_of):
+    """Brief D3: below 10 isolates no percentage, 10 to 29 tagged "small n" (config.SMALL_N_NONE / SMALL_N_LOW)."""
+    for s in resistance_change.detect(ds, as_of):
+        if s["status"] == "resolved":
+            continue
+        n, n_prior = s["slots"]["counts"][1], s["slots"]["counts_prior"][1]
+        assert s["template_id"] == f"trend_resistance_change__{stats.n_state(n)}__{stats.n_state(n_prior)}"
+        now = s["text"].split(" in the last ")[0]
+        assert ("%" in now) == (n >= C.SMALL_N_NONE) and ("small n" in now) == (C.SMALL_N_NONE <= n < C.SMALL_N_LOW)
+
+
+def test_resistance_change_resolved_item(ds):
+    """Brief D5: a cell flagged last week and not this week says so, with last week's and this week's counts."""
+    (s,) = [s for s in resistance_change.detect(ds, "2026-03-08") if s["status"] == "resolved"]
+    assert s["text"] == ("Health centre South · Ceftriaxone resistant: resolved. Last flagged week ending 1 Mar 2026: "
+                         "3 of 9 K. pneumoniae; now 2 of 10 in the last 4 weeks.")
+    assert len(s["evidence"]["isolate_ids"]) == 10
+
+
+def test_outlier_needs_enough_isolates_per_cell(ds):
+    """Brief D4: the ICU MRSA weeks no longer fire, because their third 'high' cell was P. mirabilis ciprofloxacin
+    1 of 2 (8 and 15 Mar) or E. coli mecillinam 1 of 1 (29 Mar). Two cells of one clone (cefoxitin and clindamycin
+    on the same S. aureus isolates) are not three results above range."""
+    for as_of in ["2026-03-08", "2026-03-15", "2026-03-29"]:
+        t = outlier.ward_cells(ds, as_of)
+        icu = t[(t.ward == "ICU") & (t.p_mid < outlier.MIDP_ALPHA)]
+        assert len(icu) == outlier.MIN_HIGH_CELLS and set(icu[icu.high].drug) == {"FOX", "CLI"}
+        assert not any(s["ward"] == "ICU" for s in outlier.detect(ds, as_of))
     uro_weeks = [a for a in ["2025-06-08", "2025-06-15", "2025-06-22", "2025-06-29"]
                  if any(s["ward"] == "URO" for s in outlier.detect(ds, a))]
     assert uro_weeks and uro_weeks[0] == "2025-06-15"
 
 
+def test_outlier_names_each_cell_and_lists_its_isolates(ds):
+    """Brief D4 and D8: every high cell is named with its count, and the case file lists only those cells' isolates."""
+    (s,) = outlier.detect(ds, "2025-06-15")
+    assert s["ward"] == "URO" and s["priority"] == "P3" and s["section"] == "changed"
+    assert s["text"] == ("Urology: resistance above the usual range in 4 of 7 organism–drug pairs in the last 4 weeks. "
+                         "Resistant of tested: E. coli ceftriaxone 11 of 35; E. coli ciprofloxacin 12 of 35; E. coli "
+                         "cefuroxime 12 of 35; E. coli trimethoprim 13 of 35. Other units: 2 of 75 pairs. Unusual "
+                         "pattern across several results.")
+    cells = s["evidence"]["counts"]["cells"]
+    assert all(c["tested"] >= outlier.MIN_TESTED or c["resistant"] >= outlier.MIN_RESISTANT for c in cells)
+    rows = ds.isolates[ds.isolates.isolate_id.isin(s["evidence"]["isolate_ids"])]
+    assert len(rows) == 35 and set(rows.ward_code) == {"URO"} and set(rows.organism) == {"Escherichia coli"}
+
+
+def test_outlier_templates_cover_every_pair():
+    assert len(resistance_change.PAIRS) <= MAX_OUTLIER_PAIRS
+
+
 # ---------------------------------------------------------------- shared properties of every B2 detector
 
-@pytest.mark.parametrize("as_of", DEMO_AS_OF + ["2025-12-14", "2026-06-28"])
+@pytest.mark.parametrize("as_of", DEMO_AS_OF + ["2025-12-14", "2025-12-21", "2026-06-28", "2026-07-05"])
 def test_text_numbers_come_from_slots(ds, as_of):
     for m in MINE:
         for s in m.detect(ds, as_of):

@@ -11,6 +11,12 @@ identity is shown as a qualifier), MRSA and ESBL, per unit x organism, evaluated
 A cluster card whose unit, organism and marker overlap a phenotype cluster is not shown separately: it is attached to
 the phenotype signal as evidence (evidence.thl_rule). Same pattern (top antibiogram >= 75% of patients): MRSA P1,
 ESBL P2. Heterogeneous: P2, "ranked lower by our rules (truth unknown)".
+
+Actions follow THL Ohjaus 2/2020: contact precautions for MRSA, VRE, CPE and ESBL K. pneumoniae carriers on wards
+(section 8.1.1), a risk assessment for other ESBL producers (8.1.1), screening of exposed patients (8.2.3), standard
+precautions at outpatient clinics with ward measures on admission (8.1.3), new MRSA strains to THL (5.2), and routine
+strain submission for carbapenemase E. coli, E. cloacae and K. pneumoniae, other species by prior agreement
+(appendix 1, 2.2.3).
 """
 from __future__ import annotations
 
@@ -29,20 +35,40 @@ CLUSTER_ALPHA = 1e-3
 WINDOW_DAYS = ph.WINDOW_DAYS
 HISTORY_DAYS = ph.HISTORY_DAYS
 SAME_PATTERN_SHARE = 0.75
-ACTION_TEXT = {"cpe": "Single room with own WC, contact precautions, screen exposed patients (at least one week after "
-                      "exposure ends), look-back over the past year, notify infection control; strain to the reference lab.",
-               "vre": "Single room with own WC, contact precautions, screen exposed patients, look-back over the past "
-                      "year, notify infection control; strain to the reference lab.",
-               "mrsa": "Contact precautions; check ward overlap; typing if two or more are linked.",
-               "esbl": "Standard precautions; epidemic check: same antibiogram? same room or ward days?"}
+SOURCE = "THL Ohjaus 2/2020 (guidance, not legally binding); local infection-control rules apply"
+ROUTINE_CPE_STRAINS = {"Escherichia coli", "Enterobacter cloacae", "Klebsiella pneumoniae"}
+MRSA_ACTION = ("Contact precautions; screen exposed patients; new MRSA strains go to the THL reference lab (spa typing); "
+               "check ward overlap.")
+ESBL_KP_ACTION = "Contact precautions; screen exposed patients (same room or unit); check the past year on the unit."
+ESBL_ACTION = ("Standard precautions; contact precautions by risk assessment; epidemic check: same antibiogram? same "
+               "room or ward days?")
+
+
+def action_text(marker: str, organism: str, outpatient: bool = False) -> str:
+    """What THL guidance asks for, by marker and species (module docstring); no digits, as it is shown in card text."""
+    if marker == "mrsa":
+        return MRSA_ACTION
+    if marker == "esbl":
+        return ESBL_KP_ACTION if organism == "Klebsiella pneumoniae" else ESBL_ACTION
+    strain = "strain to the THL reference lab"
+    if marker == "cpe" and organism not in ROUTINE_CPE_STRAINS:
+        strain += " (agree in advance for this species)"
+    if outpatient:
+        return (f"Flag as carrier; single room with own WC and contact precautions if admitted; look-back over the "
+                f"past year; {strain}.")
+    return f"Single room with own WC, contact precautions, screen exposed patients, look-back over the past year; {strain}."
+
+
+def _outpatient(r) -> bool:
+    return pd.isna(r.care_day_no)
 
 
 def _onset_label(r) -> str:
     if bool(r.hosp_onset):
         return "hospital-onset"
-    if not pd.isna(r.care_day_no):
-        return "early in the stay, not hospital-onset"
-    return "outpatient sample"
+    if _outpatient(r):
+        return "outpatient sample"
+    return "early in the stay, not hospital-onset"
 
 
 # ----------------------------------------------------------------------------------------------- single cards
@@ -71,9 +97,10 @@ def _single_items(ds, as_of, include_recent=False) -> list[tuple]:
 
 
 def _single_signal(m, r, prev, as_of, rule) -> dict:
+    action = action_text(m, r.organism, outpatient=_outpatient(r))
     slots = {"ward": r.ward_code, "ward_label": ph.ward_label(r.ward_code), "marker_label": ph.MARKER_LABELS[m],
              "organism_label": ph.short_org(r.organism), "specimen": r.specimen, "sample_date": ph.iso(r.sample_date),
-             "onset_label": _onset_label(r)}
+             "onset_label": _onset_label(r), "action": action}
     if prev is not None:
         slots["days_since_prev"] = int((r.sample_date - prev).days)
     care_day = None if pd.isna(r.care_day_no) else int(r.care_day_no)
@@ -87,10 +114,10 @@ def _single_signal(m, r, prev, as_of, rule) -> dict:
         "method": f"THL guidance rule card: every {ph.MARKER_LABELS[m]} case (first {ph.MARKER_LABELS[m]} isolate of a patient)",
         "params": {"active_days": SINGLE_ACTIVE_DAYS, "hospital_onset_min_care_day": 3},
         "isolate_ids": [r.isolate_id],
-        "action": ACTION_TEXT[m],
+        "action": action,
         "rank": ph.rank(m, [r.specimen], "strong"),
         "date_basis": ph.DATE_BASIS,
-        "source": "THL OHJ 2/2020 (guidance, not legally binding); local infection-control rules apply",
+        "source": SOURCE,
     }
     return S.make_signal(KIND, _single_key(r, m), priority="P1", as_of=ph.iso(as_of),
                          template_id="ob_thl_single" if prev is not None else "ob_thl_single_first", slots=slots,
@@ -243,10 +270,10 @@ def _cluster_signal(ds, ep, as_of, rule) -> dict:
         "isolate_ids": sm["pop"].isolate_id.tolist(),
         "competing_explanations": ach,
         "stepup": stepup.evidence_for(ds, as_of, ep["ward"], m),
-        "action": ACTION_TEXT[m],
+        "action": action_text(m, ep["organism"]),
         "rank": ph.rank(m, sm["specimens"], h1),
         "date_basis": ph.DATE_BASIS,
-        "source": "THL OHJ 2/2020 (guidance, not legally binding); local infection-control rules apply",
+        "source": SOURCE,
     }
     if not same:
         evidence["label"] = (f"heterogeneous: {sm['n_profiles']} antibiograms, ranked lower by our rules (truth unknown)")
@@ -273,7 +300,7 @@ def cover_for(ds, as_of, ward, organism, marker, since=None) -> dict | None:
             "first_alert_date": ph.iso(ph.day_date(best["first_alert_day"])),
             "last_alert_date": ph.iso(ph.day_date(best["last_alert_day"])),
             "first_sample_date": ph.iso(ph.day_date(best["first_sample_day"])), "max_patients_28d": best["max_n_28d"],
-            "min_p": best["min_p"], "action": ACTION_TEXT[marker],
+            "min_p": best["min_p"], "action": action_text(marker, organism),
             "note": "Shown with the phenotype cluster instead of as a separate card."}
 
 

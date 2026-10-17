@@ -10,6 +10,7 @@ All data is synthetic. Python 3.12, pandas 3.0, FastAPI. Run everything with `.v
 - Never write the CSVs or derived patient-level data into the repo. Caches go to `config.CACHE_DIR` (`.cache/`, gitignored).
 - **Wording:** no prediction language on screen or in text ("predicts", "forecast", "odds", "probability that", "best choice", "recommended drug", "AI predicts"). Results are S/R (never "S/I/R"). Say "unusual pattern", "typing advised" and "profile match, not typing". Never say "decoy" or "outbreak confirmed". Say "data gap, cause unknown", never "zero resistance".
 - **Dates are sample dates.** Results usually arrive ~2 days later (`config.RESULT_LAG_DAYS`); say so wherever lead time is shown.
+- **Percentages** come only from `render.fmt`: rounded half up (10 of 16 is "63%"), and a share above 0 or below 1 never prints as "0%" or "100%" ("<1%", ">99%").
 - Reproducible: any Monte Carlo uses `stats.rng()` (fixed seed).
 
 ## 1. Data (`aei/data.py`, done)
@@ -33,7 +34,7 @@ Goldens: 24,571 isolates; 46,792 cultures; `first_year` 21,387; `first_30d` 23,7
 ## 2. Time model (everyone)
 - **`as_of`** = the last data day, a Sunday (`YYYY-MM-DD`). The brief is dated **`as_of + 1 day`** (Monday). The API accepts `as_of` (Sunday) or `monday` (converted to `as_of = monday - 1 day`).
 - **Strict as-of:** nothing sampled after `as_of` may influence any number, signal, alert or banner for that date. Alerts approved after `as_of + 1` are invisible at that date.
-- **Windows** (`config.WINDOWS`) end on `as_of` inclusive: `4w` = 28 days, `4m` = 112, `12m` = 364. "Prior 52 weeks" = the 364 days ending the day before the window starts.
+- **Windows** (`config.WINDOWS`) end on `as_of` inclusive: `4w` = 28 days, `4m` = 112, `12m` = 364. "Prior 52 weeks" = the 364 days ending the day before the window starts. On screen they are `config.WINDOW_LABELS`: "Last 4 weeks", "Last 16 weeks", "Last 52 weeks" (never "months": 364 days is not 12 months).
 - **The replay slider** moves `as_of` one week at a time over the range `data.week_end(55)`..`config.DATA_END` (52 weeks of history are needed before the first replay week). The UI passes one global `as_of` to every view, so the brief, My ward and the order screen always agree.
 - **Counting rule** param `rule` ∈ {`readme_period`, `30d`}, default `readme_period`, applied to the rows inside each window.
 
@@ -69,23 +70,23 @@ Every detector returns `list[dict]` built with `signal.make_signal(...)`:
   "changed": {"changed": true, "p": 1e-4, "direction": "down"} | null,   # stats.change_test on NOT-covered counts
   "below_local_setting": true }                 # estimate.pct < 0.80 (local setting, set by stewardship)
 ```
-- **Coverage semantics:** port 11_fixes / 36b exactly. An isolate counts as covered if S. `INTRINSIC`/`NO_BREAKPOINT` pairs count as not covered. A combo is covered if any member is covered. Untested non-intrinsic pairs are excluded from `tested`.
+- **Coverage semantics:** an isolate is covered when its effective result (`phenotype_rules.effective`, section 7b) is S, and not covered when it is R; an untested pair is excluded from `tested`. A combo is covered if any member is covered.
 - **Estimate rule:**
   - `ok`: observed (with its Jeffreys interval);
-  - `low_n`: stabilised, using `stats.pooled_estimate`/`pooled_interval` toward the unit's prior 52 weeks with k = `POOLING_K`;
+  - `low_n`: stabilised (the 36b window estimate): each organism's window share pooled with k = `POOLING_K` pseudo-isolates toward the hospital-wide as-of rate for that organism and specimen group;
   - `not_enough_data`: no percentage (`estimate.pct` = null).
 
   The **observed x of n is always present**, so "74% stabilised" never sits unexplained next to "11 of 24".
 - `FOX` is never shown as a therapy option (`HIDDEN_AS_OPTION`). Urine-only drugs (`URINE_ONLY`) are shown only for urine.
 - **Ineligible drugs** (tested on fewer than 90%) are hidden from the table and listed under `not_shown` with a reason, e.g. "Ciprofloxacin not shown: untested on S. aureus (most of this ward's isolates)".
 
-**Goldens** (reproduce 36b_coverage_asof with 36b's counting rule first, then record the product-default values in the test):
-- ICU blood+wound, as-of 2026-03-29, 4w, k=20 stabilised:
-  - MEM 74 [61–85], TZP 73 [60–84], VAN 78 [62–91], n = 24;
-  - observed MEM 11/24, TZP 11/24, VAN 20/24.
-- URO urine, as-of 2025-06-29, 4w:
-  - CRO 70 [60–78], CIP 70 [60–78], NIT 90 [83–95], n = 67;
-  - observed CRO 40/65, CIP 35/60, NIT 61/67.
+**Goldens** (product default, README counting rule):
+- ICU blood+wound, as-of 2026-03-29, 4w, k=20 stabilised, n = 24:
+  - MEM 72 [59–84], TZP 73 [60–84], VAN 78 [61–90]. 36b printed MEM 74 [61–85]; it counted ampicillin-S E. faecalis as covered by meropenem, which has no enterococcal EUCAST breakpoint;
+  - observed MEM 11/24, TZP 11/24, VAN 20/24; 12m MEM 149/184.
+- URO urine, as-of 2025-06-29, 4w (state `ok`, so observed), n = 69:
+  - CRO 42/67 = 63 [51–74], NIT 63/69 = 91 [83–96]; CIP not shown (untested on 16% of isolates);
+  - with the 30d rule (36b's): CRO 40/65, CIP 35/60, NIT 61/67, n = 67.
 
 ### 4.2 My ward view
 `views.my_ward(ds, as_of, ward=None, specimen_group="blood_wound", organism=None, sex=None, age_band=None, setting=None, windows=("4w","12m"), rule="readme_period") -> dict`
@@ -140,13 +141,13 @@ Each detector is `detect(ds, as_of, rule="readme_period") -> list[signal]` and i
 - **Performance:** a brief takes ≤ 3 s cold. If detectors are slow, precompute per-week signals into `.cache/signals/{as_of}.json` via `brief.precompute(ds, weeks)`.
 
 **Goldens (signals):**
-- **ICU MRSA 2026** (pattern `FOX:R VAN:S CLI:R`; first sample 3 Mar 2026). Patients by date:
-  - as-of 2026-03-07: 3 patients, 3 share the top pattern;
-  - 03-13: 5;
-  - 03-20: 8;
-  - 03-27: 13 (12 share).
-- **URO ESBL E. coli 2025:** fires by 2025-06-04 with 4 identical patients.
-- **MED-B ESBL look-alike 2024:** heterogeneous (3 antibiograms), ranked lower, and never called a decoy.
+- **ICU MRSA 2026** (pattern `FOX:R VAN:S CLI:R`; first sample 3 Mar 2026). Patients by as-of Sunday:
+  - 2026-03-08: 3 patients, 3 share the top pattern;
+  - 03-15: 6;
+  - 03-22: 9;
+  - 03-29: 13 (12 share).
+- **URO ESBL E. coli 2025:** fires by 2025-06-04 with 4 identical patients; 6 patients since 30 May by 2025-06-08.
+- **MED-B ESBL look-alike 2024:** heterogeneous (3 antibiograms), ranked lower, and never called a decoy. Its episode (19–21 Sep 2024) falls before the replay range, so tests cover it; the demo cannot show it.
 - **Trimethoprim, primary-care women, README rule, rolling 52 weeks:**
   - peak 20.4% (160/786) at the week ending 2026-06-21;
   - ≥ 20% at the weeks ending 06-21, 06-28, 07-12 and 07-19;
@@ -155,10 +156,11 @@ Each detector is `detect(ds, as_of, rule="readme_period") -> list[signal]` and i
   - before the cluster: 0 patients on ICU and 11 elsewhere (ED 4, SURG 4, MED-A 1, PHC-S 1, PHC-N 1);
   - back on ICU 2026-09-12;
   - the profile is 22.7% of 110 MRSA patients.
-- **Expert rules:**
-  - 0 of 517 ESBL-flagged isolates are S to CXM or CRO;
+- **Phenotype consistency checks** (`config.EXPERT_RULES`, labelled "phenotype consistency checks (EUCAST expert rules + local rules)"; all isolates):
+  - 0 of 517 ESBL-flagged isolates are reported S to CXM or CRO (local reporting rule);
   - 0 of 111 MRSA are FOX-S;
-  - 109 rows are CRO R with AMP S or CXM S (all isolates).
+  - 139 rows are CRO R with AMP S or CXM S (E. coli, K. pneumoniae, K. oxytoca, P. mirabilis);
+  - 276 rows are TZP R with AMP S (E. coli, P. mirabilis; EUCAST Expert Rules v3.3 rule 1).
 - **Data gap:** PHC-S sent no cultures 8–14 Dec 2025 (~51 expected).
 - **A VRE card on GER** by the 14 Sep 2026 brief (check `08_hidden`).
 
@@ -238,12 +240,12 @@ FastAPI app `aei.api:app`; run with `uvicorn aei.api:app --host 127.0.0.1 --port
 - `source: {label: APP_NAME + " · infection control"}`.
 - `suggestions: [{label: "Change to pivmecillinam", uuid, actions: [{type: "update", description, resource: <MedicationRequest with the ATC code swapped>}]}]`.
 - `overrideReasons: [{code: "keep", display: "Keep trimethoprim"}, ...]`.
-- `links: [{label: "Details", url: "/#/signal/<id>?as_of=", type: "absolute"}, {label: "Open in Strainwatch (SMART)", url: "/smart/launch", type: "smart"}]`.
+- `links: [{label: "Details", url: "/#/signal/<id>?as_of=", type: "absolute"}]`. A SMART app launch is not part of the demo.
 - `selectionBehavior: "at-most-one"`, `uuid`, plus our own `extension: {"strainwatch.rule": "...", "strainwatch.evidence": {...counts, filter...}}`.
 
 *Feedback.* Keep / Change / Details map to CDS Hooks feedback `outcome: overridden | accepted` (+ `overrideReason`, `acceptedSuggestions`). The feedback is stored with card uuid, source id, outcome and timestamp; no user or patient id is stored.
 
-**Store (`store.py`):** SQLite in `.cache/state.sqlite`, with tables alerts, heads_up, feedback and audit (append-only). `store.reset()` clears it for tests and the demo. `store.seed_demo()` adds the ICU MRSA alert (approved 2026-03-09 by "Infection control", wards [ICU], drugs [], expires 2026-03-23, message per CONTENT.md), marked `seed: true`. The trimethoprim card needs **no** seed: it comes from the policy line.
+**Store (`store.py`):** SQLite in `.cache/state.sqlite`, with tables alerts, heads_up, feedback and audit (append-only). `store.reset()` clears it for tests and the demo. `store.seed_demo()` adds `config.DEMO_ALERT_SEEDS` (section 7b), marked `seed: true`. The trimethoprim card needs **no** seed: it comes from the policy line.
 
 **Precompute (`precompute.py`):** the CLI `python -m aei.precompute [--weeks all|demo]` warms the caches (signals per week, replay weeks, the demo-Monday briefs) and prints timings.
 
@@ -290,16 +292,26 @@ The card updates live as the drug changes. Owner: **D** (`aei/cds.py`, pure and 
              {"key": "your_drug", "text", "numbers": {r, n, pct, ci, window, r12, n12, pct12, state}},
              {"key": "alternatives", "label": "Alternatives from the local guide (example, to be set by Tyks)",
               "items": [{"drug", "name", "r", "n", "pct", "ci", "state"}]} ],          # at most 3 lines
-  "previous_results": [ {"date", "unit", "specimen", "organism", "flags": ["ESBL"], "drug_result": "R", "reason": "reported"|"inferred from MRSA"|...} ],  # shown FIRST when present
+  "previous_results": [ {"date", "unit", "specimen", "organism", "flags": ["ESBL"], "drug_result": "R", "reason": <phenotype_rules.REASONS code, shown as REASON_TEXT>} ],  # shown FIRST when present
   "actions": {"keep_reasons": config.KEEP_REASONS, "change_to": [drug codes from the guide], "details_link": "/#/ward?ward=URO&specimen=urine&organism=Escherichia%20coli&as_of=..."},
   "interruptive": bool, "evidence": {...filters and counts...}, "rule": "<plain sentence of which rule fired>" }
 ```
 
 **The rules (deterministic; never model output; never a patient-level probability):**
-- **The population** is the unit's own isolates for the indication's specimen. For `COMMUNITY_UNITS` (ED, PHC-N, PHC-S), use isolates from those units whose patients live in the patient's home area. For uti, also match the patient's sex (`sex_matched`). With a `reference_organism` (uti: E. coli), count that organism's R of n. Otherwise count coverage over the organism mix (not-covered of tested). Use `phenotype_rules.effective_column`, so MRSA implies beta-lactam R and ESBL implies cephalosporin R. Windows are 4w and 12m. Small n: `stats.n_state`.
+- **The population** is the unit's own isolates for the indication's specimen. For `COMMUNITY_UNITS` (ED, PHC-N, PHC-S), use isolates from those units whose patients live in the patient's home area. For uti, also match the patient's sex (`sex_matched`). With a `reference_organism` (uti: E. coli), count that organism's R of n. Otherwise count coverage over the organism mix (not-covered of tested). Windows are 4w and 12m. Small n: `stats.n_state`.
+- **Effective results** (shared with My ward): `phenotype_rules.effective(isolates, drug) -> (result, reason)`, result S/R/None per isolate. First match wins; rules that EUCAST states as "report R" come before the reported result, inferences for an untested pair after it:
+  - `no_breakpoint` (`config.NO_BREAKPOINT`, EUCAST v16.1 dash or no breakpoint for the species; includes enterococcal meropenem and C. freundii cefuroxime, Expert Rules v3.3 rule 5) and `intrinsic` (`config.INTRINSIC`, Expected Resistant Phenotypes v1.2 pairs only): R;
+  - `inferred_mrsa`: S. aureus with a positive cefoxitin screen is R to every beta-lactam on the panel (EUCAST Staphylococcus rule 1; ceftaroline and ceftobiprole excepted, not on the panel);
+  - `reported`: the laboratory's S or R;
+  - `inferred_mssa`: a negative screen makes CXM, CRO, TZP and MEM S; S. aureus ampicillin stays untested (penicillinase);
+  - `inferred_ampicillin`: E. faecalis TZP follows ampicillin;
+  - `local_esbl_rule`: an untested CXM or CRO on an ESBL producer is R. This laboratory's reporting rule (0 of 517 ESBL isolates reported S); EUCAST reports cephalosporins as tested. Never applied to ceftazidime;
+  - `untested`: excluded from every count.
+
+  The only reported results the rules overrule are 517 C. freundii cefuroxime S. Methods note: C. freundii is an AmpC species, so 3rd-generation cephalosporin and TZP S results carry a selection risk (Expert Rules v3.3 rule 3).
 - **Warning** (interruptive) **only at `stage="sign"`**, and only if either:
   - (a) an approved, unexpired alert at `as_of + 1` covers this unit **and** this drug (`alert.wards`, `alert.drugs`); or
-  - (b) this patient's own isolate in the 12 months to `as_of` has an effective R to this drug.
+  - (b) this patient's own isolate in the 12 months to `as_of` has an acquired R to this drug (reason `reported`, `inferred_mrsa` or `local_esbl_rule`). An `intrinsic` or `no_breakpoint` R is a property of the species: a passive note naming the organism, never a warning.
 
   At `stage="select"` the same case shows as `info`, with a note that it will ask at sign.
 - **Info** (passive banner): an alert on this unit that doesn't cover the drug; or the population's observed resistance is ≥ (line − `INFO_MARGIN`), where the line is `EMPIRICAL_LINES[indication][drug]`, else `_default`; or an active `policy_states` line matching the unit's population and drug.
@@ -317,9 +329,11 @@ The card updates live as the drug changes. Owner: **D** (`aei/cds.py`, pure and 
 - `GET /api/demo/scenarios` gives `config.DEMO_SCENARIOS`, each with the computed state, for the scenario picker.
 - **The CDS Hooks endpoints stay as the integration story:** order-select returns at most info cards, and order-sign may return a warning card under the same rules.
 
-**Demo scenarios:** `config.DEMO_SCENARIOS`, with the expected states quiet / info / warning. `tests/test_cds.py` must assert all five.
+- **Alternatives** come from `config.local_guide_example(indication, sex)` (uti: women's cystitis list, or the men's list; "example, to be set by Tyks"). A drug is never offered when an active alert on the unit lists it in `resistant_to`, or when it would itself warn. When nothing is left, say `config.NO_GUIDE_ALTERNATIVE`.
 
-**Seeds:** `store.seed_demo()` inserts `config.DEMO_ALERT_SEEDS`: URO ESBL approved 9 Jun 2025 covering CXM/CRO/CAZ, and ICU MRSA approved 9 Mar 2026 covering beta-lactams. Seeds are visible to every session.
+**Demo scenarios:** `config.DEMO_SCENARIOS`, with the expected states quiet / info / warning. `tests/test_cds.py` must assert all five. The uro-esbl patient is a woman (P001948), like 10 of the 11 clone patients.
+
+**Seeds:** `store.seed_demo()` inserts `config.DEMO_ALERT_SEEDS`. Each carries `resistant_to`: the flagged antibiogram's reported R plus what its marker implies. Its `drugs` (what warns) are exactly those. URO ESBL, approved 9 Jun 2025: AMP, CXM, CRO, CIP, TMP. ICU MRSA, approved 9 Mar 2026: every beta-lactam plus CLI. Seeds are visible to every session; their messages are checked against the raw data (`tests/test_against_source.py`).
 
 ## 10. Public deployment (judges use it on their own devices)
 - **Host:** UpCloud, Helsinki, behind the box's existing Traefik (`docs/HOSTING.md`). Compose project `jx-tyks`, 1 GB memory, and no published ports. `Dockerfile` and `deploy/compose.yml` are owned by the integrator.

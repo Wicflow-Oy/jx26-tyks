@@ -116,9 +116,9 @@ def test_quiet_line_counts_quiet_units(briefs):
 
 def test_quiet_is_eight_of_nine_when_only_icu_has_items(ds, tmp_cache, monkeypatch):
     fake = sig.make_signal("resistance_change", {"ward": "ICU", "organism": "x", "drug": "FOX"}, priority="P2",
-                           as_of="2026-03-08", template_id="trend_resistance_change",
-                           slots={"ward_label": "Intensive care unit", "organism_label": "S. aureus",
-                                  "drug_label": "Cefoxitin", "counts": [3, 8], "rate": 0.375, "window_weeks": 4,
+                           as_of="2026-03-08", template_id="trend_resistance_change__not_enough_data__ok",
+                           slots={"ward_label": "Intensive care unit", "finding": "MRSA (cefoxitin screen positive)",
+                                  "organism_label": "S. aureus", "counts": [3, 8], "rate": 0.375, "window_weeks": 4,
                                   "rate_prior": 0.01, "counts_prior": [1, 70], "prior_weeks": 52},
                            evidence={"filter": {}, "counts": {}, "method": "test"}, ward="ICU", section="changed")
 
@@ -167,7 +167,8 @@ def test_demo_phcs_data_gap(briefs):
     dq = items(b, "data_quality")
     gap = [it for it in dq if it["kind"] == "completeness"]
     assert len(gap) == 1 and gap[0]["ward"] == "PHC-S" and gap[0]["status"] == "new"
-    assert gap[0]["text"] == "Health centre South: no results this week (usually 51). Data gap, cause unknown; not zero resistance."
+    # Re-pinned: the detector counts cultures, and a data gap says nothing about resistance (audit #5)
+    assert gap[0]["text"] == "Health centre South: no cultures this week (usually 51 a week). Data gap, cause unknown."
     assert not any(it.get("template_id") == "completeness_ok" for it in dq)
     assert next(u for u in b["map"]["units"] if u["ward"] == "PHC-S")["state"] == "no_data"
 
@@ -175,7 +176,9 @@ def test_demo_phcs_data_gap(briefs):
 def test_demo_icu_week_b2(briefs):
     b = briefs["2026-03-09"]
     ch = [it for it in items(b, "changed") if it["ward"] == "ICU" and it["status"] != "resolved"]
-    assert {it["kind"] for it in ch} == {"resistance_change", "ward_outlier"}
+    # Re-pinned: no ward outlier any more; its third "high" cell was P. mirabilis ciprofloxacin 1 of 2 (brief D4)
+    assert {it["kind"] for it in ch} == {"resistance_change"}
+    assert "MRSA (cefoxitin screen positive): 3 of 8 S. aureus in the last 4 weeks" in ch[0]["text"]
     assert next(u for u in b["map"]["units"] if u["ward"] == "ICU")["state"] != "quiet"
 
 
@@ -222,6 +225,36 @@ def test_demo_seen_before_and_ger_vre_b1(briefs):
 
 
 # ---------------------------------------------------------------- status, signals_for, rule, strict as-of
+
+@pytest.mark.parametrize("as_of, item, p1, info, quiet_unit", [
+    ("2026-03-01", "thl-f1cb120526", 1, 1, "ED"),  # ED CPE of 26 Jan: 34 days old, its card runs 28 days
+    ("2026-03-08", "see-c6624d52aa", 2, 1, "URO"),  # URO ESBL return run, latest sample 5 Feb
+    ("2026-03-15", "thl-75dc531e3d", 1, 2, "PHC-N"),  # PHC-N VRE of 9 Feb
+])
+def test_detector_resolved_items_stay_resolved(ds, tmp_cache, as_of, item, p1, info, quiet_unit):
+    """Brief D1: an item its detector lists as resolved is not counted as active, and its unit is quiet again."""
+    b = brief.build_brief(ds, as_of)
+    assert [it["status"] for it in items(b) if it["id"] == item] == ["resolved"]
+    assert (b["counts"]["P1"], b["counts"]["info"]) == (p1, info)
+    assert quiet_unit in items(b, "quiet")[0]["slots"]["units_text"]
+    later = brief.build_brief(ds, str((pd.Timestamp(as_of) + pd.Timedelta(days=7)).date()))
+    assert item not in {it["id"] for it in items(later)}
+
+
+def test_resolved_items_say_what_changed(ds, tmp_cache):
+    """Brief D5: a resolved item states last week's flagged value and this week's, not last week's present tense."""
+    (gap,) = [it for it in items(brief.build_brief(ds, "2025-12-21"), "data_quality") if it["status"] == "resolved"]
+    assert gap["text"].startswith("Health centre South: resolved, 48 cultures this week.")
+    (line,) = items(brief.build_brief(ds, "2026-07-05"), "policy")
+    assert line["status"] == "resolved" and "now 19.7% (156 of 790" in line["text"] and " is " not in line["text"]
+
+
+def test_replay_ticks_count_active_items(ds, tmp_cache):
+    """Brief D1: the slider's tick counts are the brief header's counts."""
+    (row,) = brief.precompute(ds, ["2026-03-01"])
+    counts = brief.build_brief(ds, "2026-03-01")["counts"]
+    assert (row["n_p1"], row["n_signals"]) == (counts["P1"], sum(counts.values())) == (1, 5)
+
 
 def test_status_new_ongoing_resolved(ds, tmp_cache):
     pid = policy.policy_states(ds, "2026-06-21")[0]["signal_id"]

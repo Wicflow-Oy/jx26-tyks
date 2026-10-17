@@ -108,32 +108,57 @@ def policy_states(ds, as_of, rule: str | None = None) -> list[dict]:
     return [state(ds, line, as_of, rule) for line in C.POLICY_LINES]
 
 
+def _evidence(line: dict, s: dict, counts: dict) -> dict:
+    pop = line.get("population", {})
+    return {
+        "filter": {"ward": list(pop.get("wards") or []) or None, "specimen": line["specimen"],
+                   "organism": line["organism"], "drug": line["drug"], "sex": pop.get("sex"),
+                   "date_from": s["date_from"], "date_to": s["date_to"], "rule": s["counting_rule"]},
+        "counts": counts,
+        "method": METHOD,
+        "params": {"threshold": s["threshold"], "window_days": s["window_days"], "line_id": line["id"],
+                   "crossed_on": s["crossed_on"], "prior_as_of": s["prior_as_of"]},
+    }
+
+
+def _signal(line: dict, s: dict) -> dict:
+    slots = {"drug_label": s["drug_label"], "organism_label": _organism_text(line),
+             "population_label": s["population_label"], "rate": s["rate"], "counts": [s["x"], s["n"]],
+             "window_weeks": s["window_days"] // 7, "relation": "above" if s["rate"] > s["threshold"] else "at",
+             "threshold": s["threshold"], "crossed_on": s["crossed_on"], "rate_prior": s["rate_prior"],
+             "counts_prior": [s["x_prior"], s["n_prior"]], "interval": s["interval"],
+             "alternative": s["local_guide_alternative"]["text"]}
+    counts = {"resistant": s["x"], "tested": s["n"], "prior_resistant": s["x_prior"], "prior_tested": s["n_prior"],
+              "interval": s["interval"]}
+    return sig.make_signal(
+        "policy_line", {"line": line["id"]}, priority="P2", as_of=s["as_of"], template_id="trend_policy_line",
+        slots=slots, evidence=_evidence(line, s, counts), ward=None, specimen=line["specimen"],
+        organism=line["organism"], drug=line["drug"], section="policy", advice=line["message"])
+
+
+def _resolved_signal(line: dict, s: dict, last: dict) -> dict:
+    """The week after the rate falls below the line: last week's flagged value and this week's."""
+    slots = {"drug_label": s["drug_label"], "organism_label": _organism_text(line),
+             "population_label": s["population_label"], "last_flagged": last["as_of"], "rate_last": last["rate"],
+             "counts_last": [last["x"], last["n"]], "rate": s["rate"], "counts": [s["x"], s["n"]],
+             "window_weeks": s["window_days"] // 7, "threshold": s["threshold"]}
+    counts = {"resistant": s["x"], "tested": s["n"], "last_flagged_resistant": last["x"],
+              "last_flagged_tested": last["n"], "interval": s["interval"]}
+    return sig.make_signal(
+        "policy_line", {"line": line["id"]}, priority="P2", as_of=s["as_of"], template_id="trend_policy_line_resolved",
+        slots=slots, evidence=_evidence(line, s, counts), ward=None, specimen=line["specimen"],
+        organism=line["organism"], drug=line["drug"], status="resolved", section="policy")
+
+
 def detect(ds, as_of, rule: str = "readme_period") -> list[dict]:
     """Policy-line items for the brief. The line's own counting rule applies (see module docstring)."""
     out = []
     for line in C.POLICY_LINES:
         s = state(ds, line, as_of)
-        if not s["active"]:
+        if s["active"]:
+            out.append(_signal(line, s))
             continue
-        slots = {"drug_label": s["drug_label"], "organism_label": _organism_text(line),
-                 "population_label": s["population_label"], "rate": s["rate"], "counts": [s["x"], s["n"]],
-                 "window_weeks": s["window_days"] // 7, "relation": "above" if s["rate"] > s["threshold"] else "at",
-                 "threshold": s["threshold"], "crossed_on": s["crossed_on"], "rate_prior": s["rate_prior"],
-                 "counts_prior": [s["x_prior"], s["n_prior"]], "interval": s["interval"],
-                 "alternative": s["local_guide_alternative"]["text"]}
-        pop = line.get("population", {})
-        evidence = {
-            "filter": {"ward": list(pop.get("wards") or []) or None, "specimen": line["specimen"],
-                       "organism": line["organism"], "drug": line["drug"], "sex": pop.get("sex"),
-                       "date_from": s["date_from"], "date_to": s["date_to"], "rule": s["counting_rule"]},
-            "counts": {"resistant": s["x"], "tested": s["n"], "prior_resistant": s["x_prior"],
-                       "prior_tested": s["n_prior"], "interval": s["interval"]},
-            "method": METHOD,
-            "params": {"threshold": s["threshold"], "window_days": s["window_days"], "line_id": line["id"],
-                       "crossed_on": s["crossed_on"], "prior_as_of": s["prior_as_of"]},
-        }
-        out.append(sig.make_signal(
-            "policy_line", {"line": line["id"]}, priority="P2", as_of=s["as_of"], template_id="trend_policy_line",
-            slots=slots, evidence=evidence, ward=None, specimen=line["specimen"], organism=line["organism"],
-            drug=line["drug"], section="policy", advice=line["message"]))
+        last = state(ds, line, ts(as_of) - pd.Timedelta(days=7))
+        if last["active"]:
+            out.append(_resolved_signal(line, s, last))
     return out
