@@ -8,7 +8,7 @@ A weekly antimicrobial-resistance brief for hospital infection control, with thr
 It runs on the synthetic Tyks dataset only.
 
 - **Spec:** `CONTRACTS.md` (data, time model, the evidence object, every module and endpoint, the doctor's view, public deployment).
-- **Deploy:** `DEPLOY.md` is written for the operator. He pulls the repo from GitHub onto the UpCloud box in Helsinki (compose project `jx-tyks`, Traefik or Caddy/nginx). No build session SSHes into the server. The repo is local-only until the team lead approves the private Wicflow-Oy repo.
+- **Deploy:** `DEPLOY.md` is written for the operator. He pulls the repo from GitHub onto the UpCloud box in Helsinki (compose project `jx-tyks`, Traefik or Caddy/nginx). No build session SSHes into the server. The repo is private in Wicflow-Oy. **New here? Start with `docs/HANDOFF.md`.**
 - **Status:** built in parallel workstreams on Sat 17 Oct. See "What works" below; it is updated at each integration.
 
 ## Run locally
@@ -18,7 +18,7 @@ It runs on the synthetic Tyks dataset only.
 ```bash
 .venv/Scripts/python.exe -m uvicorn aei.api:app --host 127.0.0.1 --port 8765
 ```
-The data is read from `AEI_DATA_DIR`, which defaults to `../../context/data/synthetic_microbiology_dataset`. Caches go to `.cache/` (gitignored). No key is needed. To record live narration, the team lead puts this app's key in `.env.local` (gitignored; config loads it at start). Keys never go in chat, git or logs.
+The data is read from `AEI_DATA_DIR`, which defaults to `../jx26-tyks-context/data/synthetic_microbiology_dataset` (the context repo cloned next to this one), then to `../../context/data/synthetic_microbiology_dataset` (the original hackathon folder). Caches go to `.cache/` (gitignored). No key is needed. To record live narration, the team lead puts this app's key in `.env.local` (gitignored; config loads it at start). Keys never go in chat, git or logs.
 
 ## Data terms (open question)
 - The dataset README states **no licence**; it only says that all data is synthetic.

@@ -267,7 +267,7 @@ FastAPI app `aei.api:app`; run with `uvicorn aei.api:app --host 127.0.0.1 --port
 While other workstreams are unfinished, test against their contract with fakes or monkeypatching (D especially). The integrator wires everything together and runs the full suite. In your final report, list: files written, tests (pass/fail counts), anything mocked, any contract deviation, and open questions.
 
 ## 9. Analysis sources (read-only)
-- Scripts: `C:\Users\user\code\junctionx-turku-2026\context\analysis\tyks\NN_*.py`.
+- Scripts: `../jx26-tyks-context/analysis/tyks/NN_*.py` (the private context repo, cloned next to this one).
 - Outputs: `...\tyks\out\NN_*.txt`, `out/replay_asof.json`.
 - The script index: `README.md` there.
 
@@ -322,7 +322,7 @@ The card updates live as the drug changes. Owner: **D** (`aei/cds.py`, pure and 
 **Seeds:** `store.seed_demo()` inserts `config.DEMO_ALERT_SEEDS`: URO ESBL approved 9 Jun 2025 covering CXM/CRO/CAZ, and ICU MRSA approved 9 Mar 2026 covering beta-lactams. Seeds are visible to every session.
 
 ## 10. Public deployment (judges use it on their own devices)
-- **Host:** UpCloud, Helsinki, behind the box's existing Traefik (`../HOSTING.md`). Compose project `jx-tyks`, 1 GB memory, and no published ports. `Dockerfile` and `deploy/compose.yml` are owned by the integrator.
+- **Host:** UpCloud, Helsinki, behind the box's existing Traefik (`docs/HOSTING.md`). Compose project `jx-tyks`, 1 GB memory, and no published ports. `Dockerfile` and `deploy/compose.yml` are owned by the integrator.
 - **No login.** The role switch "Infection control | Ward doctor" sits at the top. A guided start: replay at `config.TOUR_START_AS_OF` (just before the ICU cluster), plus "Start tour" (4–5 steps). There's a visible "Prototype · synthetic data" label on every screen.
 - **Headers:** `X-Robots-Tag: noindex, nofollow` on every response, `<meta name="robots" content="noindex">`, and `/robots.txt` disallowing everything. No analytics or trackers.
 - **Logging:** request bodies and query strings are never logged; uvicorn runs with `--no-access-log`, and the app logs only errors without bodies.

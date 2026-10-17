@@ -29,8 +29,13 @@ def env(name: str, default: str | None = None) -> str | None:
     return default if v is None or v.strip() == "" else v.strip()
 
 
-_DEV_DATA = ROOT.parent.parent / "context" / "data" / "synthetic_microbiology_dataset"  # the hackathon folder layout
-DATA_DIR = Path(env("AEI_DATA_DIR") or (_DEV_DATA if _DEV_DATA.is_dir() else ROOT / "data"))
+_DATASET = Path("data") / "synthetic_microbiology_dataset"
+_DEV_DATA_CANDIDATES = [
+    ROOT.parent / "jx26-tyks-context" / _DATASET,  # context repo cloned next to this one
+    ROOT.parent.parent / "context" / _DATASET,  # the original hackathon folder layout
+]
+_DEV_DATA = next((p for p in _DEV_DATA_CANDIDATES if p.is_dir()), None)
+DATA_DIR = Path(env("AEI_DATA_DIR") or _DEV_DATA or ROOT / "data")
 CACHE_DIR = Path(env("AEI_CACHE_DIR") or ROOT / ".cache")
 
 DATA_START = "2023-10-02"  # Monday of ISO 2023-W40
