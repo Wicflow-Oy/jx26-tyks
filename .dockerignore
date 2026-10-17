@@ -1,0 +1,5 @@
+# The image is built only from deploy/artifact (see Dockerfile); everything else stays out of the build context.
+*
+!Dockerfile
+!deploy/artifact/**
+deploy/artifact/**/__pycache__

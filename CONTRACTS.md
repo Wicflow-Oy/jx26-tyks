@@ -272,3 +272,65 @@ While other workstreams are unfinished, test against their contract with fakes o
 - The script index: `README.md` there.
 
 The analysis used pickles from `common_build.py`; `aei.data.load()` produces the same table, with the extra columns `care_day_no` and `age_band`. Port the logic; don't import from the analysis folder.
+
+## 7b. Doctor's view: order context (v2, supersedes the interrupt rule in section 7)
+This is a mocked order form with these inputs:
+- a synthetic patient (`patient_id`; sex, age and home area come from the data);
+- the unit;
+- the indication (`config.INDICATIONS`: uti / bloodstream / wound, each mapped to a specimen);
+- the drug (`config.ORDER_DRUGS`).
+
+The card updates live as the drug changes. Owner: **D** (`aei/cds.py`, pure and deterministic).
+
+**The function:** `cds.order_context(ds, as_of, patient_id, unit, indication, drug, stage="select"|"sign", alerts, policy_states) -> dict`
+```
+{ "state": "quiet" | "no_data" | "info" | "warning",
+  "chip": "No active alerts · URO · data to 21 Jun",            # quiet; no_data reads "Not enough data on URO for ceftriaxone (n = 4, 12 months)"
+  "lines": [ {"key": "happening", "text", "source": {"kind": "alert"|"policy"|"own_history", "id", "flagged_by", "flagged_on"}},
+             {"key": "your_drug", "text", "numbers": {r, n, pct, ci, window, r12, n12, pct12, state}},
+             {"key": "alternatives", "label": "Alternatives from the local guide (example, to be set by Tyks)",
+              "items": [{"drug", "name", "r", "n", "pct", "ci", "state"}]} ],          # at most 3 lines
+  "previous_results": [ {"date", "unit", "specimen", "organism", "flags": ["ESBL"], "drug_result": "R", "reason": "reported"|"inferred from MRSA"|...} ],  # shown FIRST when present
+  "actions": {"keep_reasons": config.KEEP_REASONS, "change_to": [drug codes from the guide], "details_link": "/#/ward?ward=URO&specimen=urine&organism=Escherichia%20coli&as_of=..."},
+  "interruptive": bool, "evidence": {...filters and counts...}, "rule": "<plain sentence of which rule fired>" }
+```
+
+**The rules (deterministic; never model output; never a patient-level probability):**
+- **The population** is the unit's own isolates for the indication's specimen. For `COMMUNITY_UNITS` (ED, PHC-N, PHC-S), use isolates from those units whose patients live in the patient's home area. For uti, also match the patient's sex (`sex_matched`). With a `reference_organism` (uti: E. coli), count that organism's R of n. Otherwise count coverage over the organism mix (not-covered of tested). Use `phenotype_rules.effective_column`, so MRSA implies beta-lactam R and ESBL implies cephalosporin R. Windows are 4w and 12m. Small n: `stats.n_state`.
+- **Warning** (interruptive) **only at `stage="sign"`**, and only if either:
+  - (a) an approved, unexpired alert at `as_of + 1` covers this unit **and** this drug (`alert.wards`, `alert.drugs`); or
+  - (b) this patient's own isolate in the 12 months to `as_of` has an effective R to this drug.
+
+  At `stage="select"` the same case shows as `info`, with a note that it will ask at sign.
+- **Info** (passive banner): an alert on this unit that doesn't cover the drug; or the population's observed resistance is ≥ (line − `INFO_MARGIN`), where the line is `EMPIRICAL_LINES[indication][drug]`, else `_default`; or an active `policy_states` line matching the unit's population and drug.
+- **no_data**: the population has n < 10 in 12 months for this drug, and nothing else applies. It must look different from quiet.
+- **Quiet** otherwise. Never an alert on every order.
+- **Never** "AI recommends", never a block, and never patient-level probabilities. `cds.py` imports neither the narrator nor Jev.
+
+**Logging and feedback:**
+- `POST /api/order-feedback {session, card_key, source_id, state, outcome: shown|keep|change|details, reason?, changed_to?}`. Every displayed info/warning logs a `shown` event once per order draft.
+- `GET /api/order-feedback/summary?as_of=` returns, per source, "shown 14 times, changed 6". This is an infection-control view; no user or patient id is stored.
+
+**Endpoints:**
+- `POST /api/order-context` (body: the inputs above) → `order_context`.
+- `GET /api/patients/{id}/history?as_of=` gives the previous results (12 months).
+- `GET /api/demo/scenarios` gives `config.DEMO_SCENARIOS`, each with the computed state, for the scenario picker.
+- **The CDS Hooks endpoints stay as the integration story:** order-select returns at most info cards, and order-sign may return a warning card under the same rules.
+
+**Demo scenarios:** `config.DEMO_SCENARIOS`, with the expected states quiet / info / warning. `tests/test_cds.py` must assert all five.
+
+**Seeds:** `store.seed_demo()` inserts `config.DEMO_ALERT_SEEDS`: URO ESBL approved 9 Jun 2025 covering CXM/CRO/CAZ, and ICU MRSA approved 9 Mar 2026 covering beta-lactams. Seeds are visible to every session.
+
+## 10. Public deployment (judges use it on their own devices)
+- **Host:** UpCloud, Helsinki, behind the box's existing Traefik (`../HOSTING.md`). Compose project `jx-tyks`, 1 GB memory, and no published ports. `Dockerfile` and `deploy/compose.yml` are owned by the integrator.
+- **No login.** The role switch "Infection control | Ward doctor" sits at the top. A guided start: replay at `config.TOUR_START_AS_OF` (just before the ICU cluster), plus "Start tour" (4–5 steps). There's a visible "Prototype · synthetic data" label on every screen.
+- **Headers:** `X-Robots-Tag: noindex, nofollow` on every response, `<meta name="robots" content="noindex">`, and `/robots.txt` disallowing everything. No analytics or trackers.
+- **Logging:** request bodies and query strings are never logged; uvicorn runs with `--no-access-log`, and the app logs only errors without bodies.
+- **Sessions:** the browser sends a random `X-Demo-Session` id (in sessionStorage). Approvals, heads-ups and order feedback are stored per session, plus the seeds visible to all, so judges don't see each other's clicks. Each session is capped at `MAX_WRITES_PER_SESSION`. The state DB is at `config.STATE_DB` (ephemeral `/tmp` in the container is fine).
+- **Rate limits:** per IP (from `X-Forwarded-For`, trusting the proxy), with `RATE_LIMIT_PER_MIN` for all API calls and `LLM_RATE_LIMIT_PER_MIN`/`_PER_DAY` for live model calls. Exceeding a limit returns a 429 with a friendly message; live narration falls back to cached text.
+- **LLM spend cap:** `DAILY_SPEND_USD` (default $20/day). The cost is estimated from response `usage` × a price table (an env-overridable constant), and the counter is persisted in the state DB per UTC day. At the cap, narration uses replay, then the template, with `fallback_reason="spend_cap"`.
+- **The default in public mode** (`AEI_PUBLIC=1`) is `AEI_NARRATOR=replay`: precomputed narration for every demo-week item, with the template on a miss. The demo works with no key at all.
+- **Health:** `GET /api/health` → `{ok, app_name, data_loaded, narrator, key_set: bool, spend_today_usd, cap_usd}`. It never shows a key.
+- **Responsive:** desktop first, but it works at 375 px (phone) and 768 px (tablet).
+- **Polish:** loading, empty and error states; keyboard-accessible; one set of design tokens; no placeholder text reachable by a judge.
+- **Data:** the dataset README states no licence; it says only that all data is synthetic. The app shows aggregates and synthetic line lists but never offers the raw CSVs for download. Whether it may appear publicly is an open organiser question; flag it, don't block on it.

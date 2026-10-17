@@ -1,0 +1,8 @@
+# Runtime dependencies (pinned to the versions the tests ran on). Dev tools: pytest, ruff (not in the image).
+anthropic==1.15.0
+fastapi==0.143.3
+numpy==2.5.4
+pandas==3.0.6
+pydantic==2.14.1
+scipy==1.18.1
+uvicorn==0.54.0
