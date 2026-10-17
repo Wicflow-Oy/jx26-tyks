@@ -66,10 +66,12 @@ def test_rows_follow_display_order_and_hidden_drugs(icu):
 
 def test_icu_march_numbers(icu):
     # README rule (product default). The 4-week MRSA influx: 13 of 20 S. aureus are MRSA.
-    mem, tzp, van = _cell(icu, "MEM"), _cell(icu, "TZP"), _cell(icu, "VAN")
-    assert (mem["observed"]["covered"], mem["observed"]["tested"]) == (11, 24) and mem["state"] == "low_n"
-    assert round(100 * mem["estimate"]["pct"]) == 74 and [round(100 * v) for v in mem["estimate"]["ci"]] == [61, 85]
-    assert (tzp["observed"]["covered"], van["observed"]["covered"]) == (11, 20)
+    for drug, (pct, lo, hi, covered) in {"MEM": (74, 61, 85, 11), "TZP": (73, 60, 84, 11), "VAN": (78, 61, 90, 20)}.items():
+        c = _cell(icu, drug)
+        assert (c["observed"]["covered"], c["observed"]["tested"]) == (covered, 24), drug
+        assert c["state"] == "low_n" and c["estimate"]["method"] == "stabilised", drug
+        assert round(100 * c["estimate"]["pct"]) == pct and [round(100 * v) for v in c["estimate"]["ci"]] == [lo, hi], drug
+    mem, van = _cell(icu, "MEM"), _cell(icu, "VAN")
     assert mem["changed"]["changed"] and mem["changed"]["direction"] == "down"
     assert van["changed"]["changed"] and van["changed"]["direction"] == "up"
     assert _cell(icu, "MEM", "12m")["state"] == "ok" and _cell(icu, "MEM", "12m")["estimate"]["method"] == "observed"
@@ -152,10 +154,22 @@ def test_strictly_as_of(ds):
             == views.trend(ds, "ICU", "blood_wound", "MEM", as_of, weeks=8))
 
 
-def test_rule_switch(ds):
-    a = views.my_ward(ds, "2025-06-29", ward="URO", specimen_group="urine", rule="30d")
-    assert a["filters"]["rule"] == "30d" and a["windows"][0]["n_isolates"] == 67       # the 36b window
-    assert (_cell(a, "CRO")["observed"]["covered"], _cell(a, "CRO")["observed"]["tested"]) == (40, 65)
+def test_rule_switch_reproduces_36b_goldens(ds):
+    """CONTRACTS 4.1 goldens through the view under 36b's own counting rule ("30d"). Stabilised values are Monte Carlo
+    (36b used another seed), so they agree with the printed integers to within one percentage point."""
+    icu = views.my_ward(ds, "2026-03-29", ward="ICU", specimen_group="blood_wound", rule="30d")
+    assert icu["filters"]["rule"] == "30d" and icu["windows"][0]["n_isolates"] == 24
+    for drug, (pct, lo, hi, covered) in {"MEM": (74, 61, 85, 11), "TZP": (73, 60, 84, 11), "VAN": (78, 62, 91, 20)}.items():
+        c = _cell(icu, drug)
+        assert (c["observed"]["covered"], c["observed"]["tested"]) == (covered, 24), drug
+        assert [100 * c["estimate"]["pct"], *(100 * v for v in c["estimate"]["ci"])] == pytest.approx([pct, lo, hi], abs=1), drug
+    uro = views.my_ward(ds, "2025-06-29", ward="URO", specimen_group="urine", rule="30d")
+    assert uro["windows"][0]["n_isolates"] == 67
+    for drug, (covered, tested) in {"CRO": (40, 65), "NIT": (61, 67)}.items():
+        c = _cell(uro, drug)
+        assert (c["observed"]["covered"], c["observed"]["tested"]) == (covered, tested) and c["state"] == "ok", drug
+    cip = next(n for n in uro["not_shown"] if n["drug"] == "CIP")                  # 60 of 67 in 4 weeks, 84% in 12 months
+    assert cip["code"] == "not_tested_enough" and cip["window"] == "12m" and cip["tested_share"] < C.ELIGIBLE_MIN_TESTED_SHARE
 
 
 def test_antibiogram(ds):
@@ -170,6 +184,10 @@ def test_antibiogram(ds):
     assert caz["expected_resistant"] is True and caz["pct_s"] is None
     ec = next(o for o in ab["organisms"] if o["organism"] == "Escherichia coli")
     assert all(d["pct_s"] is None for d in ec["drugs"])                            # 2 isolates: not enough data
+    listed = {d["drug"] for d in ab["drugs"]} | {d["drug"] for o in ab["organisms"] for d in o["drugs"]}
+    assert not listed & C.URINE_ONLY                                               # urine-only drugs: urine views only
+    urine = views.antibiogram(ds, "2025-06-29", "URO", "urine", "4w")
+    assert C.URINE_ONLY <= {d["drug"] for d in urine["drugs"]}
 
 
 def test_filters_catalog(ds):
@@ -210,11 +228,17 @@ def test_wording(ds, icu):
 
 
 def test_speed_cold(ds):
+    """CONTRACTS 4.2 budgets with the in-memory aggregates dropped first (the dataset itself loads once at startup)."""
     ag.clear()
     t = time.perf_counter()
     views.my_ward(ds, "2026-03-29", ward="ICU", specimen_group="blood_wound")
     assert time.perf_counter() - t <= 1.5
     ag.clear()
     t = time.perf_counter()
-    views.trend(ds, None, "urine", "NIT", "2026-09-27")
-    assert time.perf_counter() - t <= 1.0
+    views.my_ward(ds, "2026-09-27", specimen_group="urine", windows=("4w", "4m", "12m"))     # all units, every window
+    assert time.perf_counter() - t <= 1.5
+    for args in ((None, "urine", "NIT", "2026-09-27"), ("ICU", "blood_wound", "MEM+VAN", "2026-09-27")):  # 41 of 52 low_n
+        ag.clear()
+        t = time.perf_counter()
+        views.trend(ds, *args)
+        assert time.perf_counter() - t <= 1.0, args

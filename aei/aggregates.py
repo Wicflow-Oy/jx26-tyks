@@ -27,7 +27,7 @@ class Base:
     orgs: tuple
     org_code: np.ndarray
     dates: np.ndarray       # datetime64[ns], sorted
-    key_code: np.ndarray    # patient x organism x specimen group id
+    key_code: np.ndarray    # patient x organism x specimen id (the README rule's deduplication key)
     first30: np.ndarray
     ind: np.ndarray
     raw: np.ndarray

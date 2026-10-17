@@ -31,7 +31,7 @@ KEY_INDEX = {k: i for i, k in enumerate(KEYS)}
 RAW_INDEX = {d: i for i, d in enumerate(C.DRUGS)}
 FLAGS = ("esbl", "mrsa", "vre", "cpe")
 MIX_PSEUDO = 5                                     # hospital-mix pseudo-isolates in the organism-mix prior (26_trace)
-LOCAL_SETTING = float(getattr(C, "LOCAL_COVERAGE_SETTING", 0.80))
+LOCAL_SETTING = 0.80                               # stewardship's local coverage line (CONTRACTS 4.1)
 LOCAL_SETTING_LABEL = "local setting, set by stewardship"
 
 _SA, _EF = "Staphylococcus aureus", "Enterococcus faecalis"
@@ -241,7 +241,7 @@ def cell(rows: pd.DataFrame, drug: str, prior_rows: pd.DataFrame | None = None, 
     prior_rows: the same unit's prior 52 weeks (for "changed"); hosp_rows: hospital-wide isolates of the same specimen
     group up to as-of (the stabilised estimate's reference); hosp_prior_rows: hospital-wide prior 52 weeks (the change
     test's anchor; defaults to hosp_rows)."""
-    parts(drug)
+    parts(drug)                                                   # fail fast on an unknown key
     frames = [f for f in (rows, prior_rows, hosp_rows, hosp_prior_rows) if f is not None]
     orgs = tuple(sorted(set().union(*[set(f["organism"].unique()) for f in frames])))
 

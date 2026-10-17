@@ -198,11 +198,12 @@ def antibiogram(ds, as_of, ward=None, specimen_group="blood_wound", window="4w",
         raise ValueError(f"unknown window {window}")
     lo = as_of - pd.Timedelta(days=C.WINDOWS[window])
     c = _unit(ds, f).counts(lo, as_of, rule)
+    shown = [d for d in C.DRUGS if d not in C.URINE_ONLY or _is_urine(specimen_group)]
     orgs = []
     for o in _organisms(c):
         i = c.orgs.index(o["organism"])
         drugs = []
-        for d in C.DRUGS:
+        for d in shown:
             j = cv.RAW_INDEX[d]
             n, s = int(c.t_raw[i, j]), int(c.s_raw[i, j])
             er = cv.never_covered(o["organism"], d)
@@ -218,7 +219,7 @@ def antibiogram(ds, as_of, ward=None, specimen_group="blood_wound", window="4w",
         "as_of": _s(as_of), "monday": _s(as_of + _DAY), "filters": _echo(f, ward),
         "window": {"key": window, "label": WINDOW_LABELS.get(window, window), "days": C.WINDOWS[window],
                    "from": _s(lo + _DAY), "to": _s(as_of), "n_isolates": c.total},
-        "drugs": [{"drug": d, "label": cv.label(d), "screening_only": d in C.HIDDEN_AS_OPTION} for d in C.DRUGS],
+        "drugs": [{"drug": d, "label": cv.label(d), "screening_only": d in C.HIDDEN_AS_OPTION} for d in shown],
         "organisms": orgs, "footer": ANTIBIOGRAM_FOOTER,
     })
 
@@ -251,7 +252,6 @@ def trend(ds, ward, specimen_group, drug, as_of, weeks=52, window="4w", organism
     f = _filters(ds, ward, specimen_group, organism, sex, age_band, setting, rule, home_area)
     if window not in C.WINDOWS:
         raise ValueError(f"unknown window {window}")
-    cv.parts(drug)
     _check_drug(drug, specimen_group)
     weeks = int(weeks)
     if not 1 <= weeks <= 260:
