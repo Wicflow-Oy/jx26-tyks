@@ -19,3 +19,15 @@ TEMPLATES = {
     "completeness_gap": {"text": "{ward_label}: no results this week (usually {expected:int}). Data gap, cause unknown; not zero resistance."},
     "quiet": {"text": "No new signals on {n_quiet:int} other units."},
 }
+
+# Workstream modules add their own templates here (B1 outbreak detectors, B2 trends/brief). Existing ids above stay.
+try:
+    from .templates_outbreak import TEMPLATES as _OUTBREAK
+    TEMPLATES.update(_OUTBREAK)
+except ImportError:
+    pass
+try:
+    from .templates_trends import TEMPLATES as _TRENDS
+    TEMPLATES.update(_TRENDS)
+except ImportError:
+    pass

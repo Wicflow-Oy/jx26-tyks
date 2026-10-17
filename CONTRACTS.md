@@ -4,7 +4,7 @@ Product name: `aei.config.APP_NAME` (placeholder "Strainwatch"; the team decides
 All data is synthetic. Python 3.12, pandas 3.0, FastAPI. Run everything with `.venv/Scripts/python.exe`.
 
 **Ground rules for every workstream**
-- Only edit the files your workstream owns (section 8). Shared files (`config.py`, `data.py`, `stats.py`, `render.py`, `signal.py`, `CONTRACTS.md`, `tests/conftest.py`) are read-only; ask the integrator for a change, or note it in your report.
+- Only edit the files your workstream owns (section 8). Shared files (`config.py`, `data.py`, `stats.py`, `render.py`, `signal.py`, `templates.py`, `CONTRACTS.md`, `tests/conftest.py`) are read-only; ask the integrator for a change, or note it in your report.
 - No git commits (the integrator commits). No network calls in tests. No real API calls anywhere unless an env key is set *and* the user runs it.
 - Keys only from env vars: `ANTHROPIC_API_KEY`, `JEV_API_KEY` (+ `JEV_BASE_URL`). Never log them, never return them in an API response, and never write them to disk.
 - Never write the CSVs or derived patient-level data into the repo. Caches go to `config.CACHE_DIR` (`.cache/`, gitignored).
@@ -106,7 +106,8 @@ Every detector returns `list[dict]` built with `signal.make_signal(...)`:
 - **Performance:** `my_ward` ≤ 1.5 s cold on this laptop.
 - `aei/aggregates.py` (optional, A) may precompute weekly counts to the cache to meet this.
 
-## 5. Signals and the Monday brief (`aei/detectors/*`, `aei/brief.py`, `aei/templates.py`; workstream B)
+## 5. Signals and the Monday brief (`aei/detectors/*`, `aei/brief.py`; workstreams B1 and B2)
+Templates: the base ids in `aei/templates.py` are fixed. B1 adds ids in `aei/templates_outbreak.py`, and B2 adds ids in `aei/templates_trends.py`; both are merged automatically. B1 owns phenotype/thl/stepup/seen_before, and B2 owns the rest plus the registry and the brief. The brief imports detectors only via the registry, so it works before B1 lands.
 ### 5.1 Detectors
 Each detector is `detect(ds, as_of, rule="readme_period") -> list[signal]` and is strictly as-of. Port the analysis implementations (script numbers in brackets):
 
@@ -258,7 +259,8 @@ FastAPI app `aei.api:app`; run with `uvicorn aei.api:app --host 127.0.0.1 --port
 |---|---|
 | Integrator (main session) | `aei/config.py`, `aei/data.py`, `aei/stats.py`, `aei/render.py`, `aei/signal.py`, `CONTRACTS.md`, `tests/conftest.py`, `tests/test_data.py`, README.md, git |
 | **A Coverage & views** | `aei/coverage.py`, `aei/views.py`, `aei/aggregates.py`, `tests/test_stats.py`, `tests/test_coverage.py`, `tests/test_views.py` |
-| **B Detectors & brief** | `aei/detectors/*.py`, `aei/brief.py`, `aei/templates.py` (extend; keep existing ids), `tests/test_detectors.py`, `tests/test_brief.py`, `tests/test_signal_goldens.py` |
+| **B1 Outbreak detectors** | `aei/detectors/phenotype.py`, `thl.py`, `stepup.py`, `seen_before.py`, `aei/templates_outbreak.py` (a `TEMPLATES` dict merged into `aei.templates`), `tests/test_outbreak_detectors.py` |
+| **B2 Trend detectors & brief** | `aei/detectors/policy.py`, `resistance_change.py`, `outlier.py`, `expert_rules.py`, `completeness.py`, `aei/detectors/__init__.py` (the registry: `DETECTORS` = module names; import lazily, skip a missing module with a warning), `aei/brief.py`, `aei/templates_trends.py`, `tests/test_trend_detectors.py`, `tests/test_brief.py` |
 | **C Narrator, validator, Jev** | `aei/narrator/*.py`, `aei/validator.py`, `aei/jev.py`, `tests/test_validator.py`, `tests/test_narrator.py`, `tests/test_jev.py` |
 | **D API, store, CDS, precompute** | `aei/api.py`, `aei/store.py`, `aei/cds.py`, `aei/precompute.py`, `web/index.html` (placeholder), `tests/test_api.py`, `tests/test_cds.py`, `tests/test_store.py` |
 
