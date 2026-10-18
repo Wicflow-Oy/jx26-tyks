@@ -338,7 +338,7 @@ button.row:hover {
 
 .plan {
   display: grid;
-  grid-template-columns: repeat(3, 96px);
+  grid-template-columns: repeat(3, minmax(92px, 118px));
   gap: 6px;
 }
 
@@ -355,9 +355,9 @@ button.row:hover {
   flex-direction: column;
   justify-content: space-between;
   width: 100%;
-  height: 64px;
-  padding: 8px 9px;
-  border-radius: 10px;
+  height: 76px;
+  padding: 10px 11px;
+  border-radius: 12px;
   text-align: left;
   background: var(--surface);
   box-shadow: inset 0 0 0 0.5px var(--line);
@@ -381,29 +381,43 @@ button.row:hover {
   box-shadow: var(--sh-1);
 }
 
-/* heat map: the tile takes the colour of its most serious open item */
-.unit.heat-p1 {
+/* heat map: a tile or cell takes the colour of its unit's most serious open item */
+.mapcard .unit.heat-p1,
+.mapcard .hcell.heat-p1,
+.mapcard .lg-heat.heat-p1 {
   background: var(--heat-p1);
-  box-shadow: inset 0 0 0 1.5px var(--p1);
+  color: var(--heat-on-p1);
 }
 
-.unit.heat-p2 {
+.mapcard .unit.heat-p2,
+.mapcard .hcell.heat-p2,
+.mapcard .lg-heat.heat-p2 {
   background: var(--heat-p2);
-  box-shadow: inset 0 0 0 1px var(--p2);
 }
 
-.unit.heat-p3 {
+.mapcard .unit.heat-p3,
+.mapcard .hcell.heat-p3,
+.mapcard .lg-heat.heat-p3 {
   background: var(--heat-p3);
-  box-shadow: inset 0 0 0 0.5px var(--line-strong);
 }
 
-.unit.heat-info {
+.mapcard .unit.heat-info,
+.mapcard .hcell.heat-info,
+.mapcard .lg-heat.heat-info {
   background: var(--heat-info);
-  box-shadow: inset 0 0 0 0.5px var(--line);
+}
+
+.unit[class*="heat-"] {
+  box-shadow: none;
+}
+
+.mapcard .unit.heat-p1 .u-state,
+.mapcard .unit.heat-p1 .u-code {
+  color: var(--heat-on-p1);
 }
 
 .unit[class*="heat-"]:hover {
-  filter: brightness(0.96);
+  filter: brightness(0.95);
 }
 
 .lg-heat {
@@ -412,24 +426,62 @@ button.row:hover {
   border-radius: 4px;
 }
 
-.lg-heat.heat-p1 {
-  background: var(--heat-p1);
-  box-shadow: inset 0 0 0 1.5px var(--p1);
+/* the weekly heat grid: units down, weeks across, the as-of week outlined */
+.heatgrid {
+  overflow-x: auto;
 }
 
-.lg-heat.heat-p2 {
-  background: var(--heat-p2);
-  box-shadow: inset 0 0 0 1px var(--p2);
+.heatgrid .eyebrow {
+  margin: 0 0 8px;
 }
 
-.lg-heat.heat-p3 {
-  background: var(--heat-p3);
-  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+.heat {
+  border-collapse: separate;
+  border-spacing: 4px;
+  margin: -4px;
 }
 
-.lg-heat.heat-info {
-  background: var(--heat-info);
-  box-shadow: inset 0 0 0 0.5px var(--line);
+.heat th {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 500;
+  color: var(--ink-2);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.heat tbody th {
+  padding-right: 6px;
+  text-align: left;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.hcell {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 38px;
+  height: 26px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--fill);
+  transition: filter var(--t-fast);
+}
+
+.hcell:hover {
+  filter: brightness(0.93);
+}
+
+.hcell.gap {
+  background: var(--hatch), var(--surface);
+  color: var(--ink-2);
+}
+
+.hcell.now {
+  outline: 1.5px solid var(--ink-2);
+  outline-offset: 2px;
 }
 
 /* data gap: hatched with a dashed outline; the words sit on a solid patch, not on the lines */

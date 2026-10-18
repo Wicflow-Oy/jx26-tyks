@@ -45,7 +45,7 @@ export async function render(root, ctx) {
     head,
     dek(brief),
     countCapsules(brief),
-    wardMap(brief, filters),
+    wardMap(brief, filters, page.history),
     signalSections({
       ...page,
       asOf: state.asOf,

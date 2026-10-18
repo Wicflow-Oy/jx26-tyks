@@ -3,14 +3,23 @@
 
 import { loadAlerts } from "../../alerts.js";
 import { get, isAbort } from "../../api.js";
+import { addDays } from "../../dates.js";
 import { isOpen, loadBrief } from "../../signals.js";
+import { asOfRange } from "../../state.js";
+
+/** How many weeks the ward heat map shows, ending with the as-of week. */
+export const HISTORY_WEEKS = 8;
 
 /**
  * Loads the brief, then the alerts and the hero's case file side by side. Only the brief is required: the
  * others fall back to [] and null, so a slow or failed extra never blanks the page.
  */
 export async function loadBriefPage(asOf, { signal }) {
-  const [brief, alerts] = await Promise.all([loadBrief(asOf, { signal }), loadAlerts({ signal })]);
+  const [brief, alerts, history] = await Promise.all([
+    loadBrief(asOf, { signal }),
+    loadAlerts({ signal }),
+    loadHistory(asOf, { signal }),
+  ]);
   const hero = heroItem(brief);
   const heroFile = hero
     ? await get(`/api/signals/${encodeURIComponent(hero.id)}`, {}, { signal }).catch((error) => {
@@ -18,7 +27,26 @@ export async function loadBriefPage(asOf, { signal }) {
         return null;
       })
     : null;
-  return { brief, alerts, hero, heroFile };
+  return { brief, alerts, hero, heroFile, history };
+}
+
+/** The briefs of the weeks before as_of (oldest first), never before the replay range; a failed week is skipped. */
+async function loadHistory(asOf, { signal }) {
+  const first = asOfRange().first;
+  const weeks = Array.from({ length: HISTORY_WEEKS }, (_, i) => addDays(asOf, -7 * (HISTORY_WEEKS - 1 - i)));
+  const loaded = await Promise.all(
+    weeks
+      .filter((week) => !first || week >= first)
+      .map((week) =>
+        loadBrief(week, { signal })
+          .then((brief) => ({ asOf: week, brief }))
+          .catch((error) => {
+            if (isAbort(error)) throw error;
+            return null;
+          }),
+      ),
+  );
+  return loaded.filter(Boolean);
 }
 
 export const section = (brief, key) => (brief?.sections ?? []).find((s) => s.key === key) ?? null;

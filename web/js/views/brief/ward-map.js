@@ -12,6 +12,7 @@ import { t } from "../../i18n.js";
 import { briefItems, byPriority, isOpen, PRIORITIES, unitStatus } from "../../signals.js";
 import { areaName } from "../../names.js";
 import { openPane } from "../../state.js";
+import { heatGrid } from "./heat-grid.js";
 import { completeness, quietUnits } from "./model.js";
 
 // grid cells of the home-area cross: [row, column], in reading order (the Tab order follows it)
@@ -20,7 +21,7 @@ const AREA_ORDER = Object.keys(CROSS);
 const inReadingOrder = (a, b) => rank(a.area) - rank(b.area);
 const rank = (area) => (AREA_ORDER.includes(area) ? AREA_ORDER.indexOf(area) : AREA_ORDER.length);
 
-export function wardMap(brief, filters) {
+export function wardMap(brief, filters, history = []) {
   const quiet = quietUnits(brief);
   const units = brief.map?.units ?? [];
   const areas = [...(brief.map?.home_areas ?? [])].sort(inReadingOrder);
@@ -66,6 +67,7 @@ export function wardMap(brief, filters) {
             }),
           ),
       ),
+      history.length > 1 && heatGrid(brief, history),
       h(
         "div",
         { class: "map-side" },

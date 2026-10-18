@@ -74,6 +74,8 @@ export const en = {
   "map.meaning": "Quiet means no open signal this week. Resistance can still be present.",
   "map.legend": "Legend",
   "map.gap": "Data gap, cause unknown",
+  "map.history": "Last {n} weeks, by unit",
+  "map.cell": "{unit}, week to {date}: {state}",
 };
 
 /** @type {Partial<typeof en>} */
@@ -150,4 +152,6 @@ export const fi = {
     "Ilman signaaleja: yksiköllä ei ole tällä viikolla avoimia signaaleja. Resistenssiä voi silti esiintyä.",
   "map.legend": "Selite",
   "map.gap": "Aukko datassa, syy tuntematon",
+  "map.history": "Viimeiset {n} viikkoa yksiköittäin",
+  "map.cell": "{unit}, viikko {date} asti: {state}",
 };

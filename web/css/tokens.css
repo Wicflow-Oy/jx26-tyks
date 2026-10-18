@@ -54,10 +54,11 @@
   --ok: #1b7a35;
   --ok-fill: #e6f4ea;
   --marker: rgba(255, 206, 0, 0.42);
-  --heat-p1: #f8cdc8;
-  --heat-p2: #fbdcae;
-  --heat-p3: #fbf0b8;
-  --heat-info: #e6eef9;
+  --heat-p1: #c62828;
+  --heat-p2: #f39c38;
+  --heat-p3: #f6d34c;
+  --heat-info: #bcd5f3;
+  --heat-on-p1: #ffffff;
   --hatch: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.13) 0 1px, transparent 1px 5px);
 
   /* type: one family; the text styles (.t-large … .eyebrow) live in base.css */
