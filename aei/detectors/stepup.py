@@ -9,6 +9,7 @@ It is a statistical test of a count step change, never a prediction, and never a
 THL cluster check covers the same unit and marker, the test is attached to that signal (evidence.stepup) and no
 separate item is shown. Otherwise it is a P3 item. The analysis found 0 positive quiet weeks in 18 series x 100 weeks.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -17,6 +18,7 @@ from scipy import stats as st
 
 from .. import data as D
 from .. import signal as S
+from . import iso, ts, ward_label
 from . import phenotype as ph
 
 KIND = "count_stepup"
@@ -26,9 +28,13 @@ PRIOR_WEEKS = 13
 EXTRA_CASES = np.arange(3, 9)
 POSITIVE_SCORE = 0.8
 LEARN_WEEKS = 26
+RECENT_WEEKS = 4  # y: new patients in the last 4 weeks, the week holding as_of included
+BASELINE_WEEKS = 52  # the up to 52 weeks before them
 DEDUP_DAYS = 30
-LABEL = ("Count step-up test (Bayesian model comparison, analysis 47): a statistical test of a step change in new "
-         "patients; supporting evidence only.")
+LABEL = (
+    "Count step-up test (Bayesian model comparison, analysis 47): a statistical test of a step change in new patients; "
+    "supporting evidence only."
+)
 
 
 def _series(ds, as_of) -> dict:
@@ -56,13 +62,14 @@ def _score(ser, inp, w, m, t) -> dict | None:
     if t < LEARN_WEEKS:
         return None
     c = ser[(w, m)]
-    lo, hi = max(0, t - 55), t - 3
+    hi = t - RECENT_WEEKS + 1  # the first week of y
+    lo = max(0, hi - BASELINE_WEEKS)
     nb = hi - lo
-    y = int(c[t - 3:t + 1].sum())
+    y = int(c[hi : t + 1].sum())
     base = float(c[lo:hi].sum())
     lam0 = max(sum(ser[(v, m)][lo:hi].sum() for v in inp) / (len(inp) * max(nb, 1)), 1 / 104)
     a, b = PRIOR_WEEKS * lam0 + base, PRIOR_WEEKS + nb
-    r, p = a, b / (b + 4.0)
+    r, p = a, b / (b + RECENT_WEEKS)
     lp0 = st.nbinom.logpmf(y, r, p)
     terms = [st.nbinom.logpmf(y - e, r, p) for e in EXTRA_CASES if y - e >= 0]
     if terms:
@@ -72,14 +79,23 @@ def _score(ser, inp, w, m, t) -> dict | None:
     else:
         log10bf, score = float("-inf"), 0.0
     u_lo, u_hi = int(st.nbinom.ppf(0.025, r, p)), max(1, int(st.nbinom.ppf(0.975, r, p)))
-    return {"week": t, "y4": y, "baseline_weeks": int(nb), "baseline_cases": int(base), "rate_prior_pooled": round(float(lam0), 4),
-            "baseline_rate_per_week": round(float(a / b), 4), "usual_low": u_lo, "usual_high": u_hi,
-            "log10_bf": None if np.isinf(log10bf) else round(log10bf, 4),  # None: fewer than 3 cases, H1 impossible
-            "step_change_score": score, "positive": score >= POSITIVE_SCORE}
+    return {
+        "week": t,
+        "y4": y,
+        "baseline_weeks": int(nb),
+        "baseline_cases": int(base),
+        "rate_prior_pooled": round(float(lam0), 4),
+        "baseline_rate_per_week": round(float(a / b), 4),
+        "usual_low": u_lo,
+        "usual_high": u_hi,
+        "log10_bf": None if np.isinf(log10bf) else round(log10bf, 4),  # None: fewer than 3 cases, H1 impossible
+        "step_change_score": score,
+        "positive": score >= POSITIVE_SCORE,
+    }
 
 
 def _ctx(ds, as_of):
-    as_of = ph.ts(as_of)
+    as_of = ts(as_of)
     return _series(ds, as_of), _inpatient_wards(ds), D.week_of(as_of)
 
 
@@ -91,8 +107,14 @@ def evidence_for(ds, as_of, ward, marker) -> dict | None:
     sc = _score(ser, inp, ward, marker, t)
     if sc is None:
         return None
-    return {"ward": ward, "marker": marker, "week_start": ph.iso(D.week_end(t) - pd.Timedelta(days=6)), **sc,
-            "prior": PRIOR_PI, "label": LABEL}
+    return {
+        "ward": ward,
+        "marker": marker,
+        "week_start": iso(D.week_end(t) - pd.Timedelta(days=6)),
+        **sc,
+        "prior": PRIOR_PI,
+        "label": LABEL,
+    }
 
 
 def _runs(ds, as_of) -> list[dict]:
@@ -116,11 +138,16 @@ def _runs(ds, as_of) -> list[dict]:
 
 
 def _key(run) -> dict:
-    return {"ward": run["ward"], "marker": run["marker"], "first_week_start": ph.iso(D.week_end(run["start_week"]) - pd.Timedelta(days=6))}
+    return {
+        "ward": run["ward"],
+        "marker": run["marker"],
+        "first_week_start": iso(D.week_end(run["start_week"]) - pd.Timedelta(days=6)),
+    }
 
 
 def _covered(ds, as_of, ward, marker) -> bool:
     from . import thl
+
     for ep in ph.active_clusters(ds, as_of, include_recent=True):
         if ep["ward"] == ward and ep["marker"] == marker:
             return True
@@ -138,30 +165,65 @@ def _signal(ds, run, as_of, rule) -> dict:
     sc = run["score"]
     w, m = run["ward"], run["marker"]
     first_week = D.week_end(run["start_week"]) - pd.Timedelta(days=6)
-    date_from = ph.ts(as_of) - pd.Timedelta(days=27)
+    date_from = ts(as_of) - pd.Timedelta(days=7 * RECENT_WEEKS - 1)
     rows = ph.population(ds, w, None, m, None, date_from, as_of)
-    slots = {"ward": w, "ward_label": ph.ward_label(w), "marker_label": ph.MARKER_LABELS[m], "y4": sc["y4"], "window_weeks": 4,
-             "usual_low": sc["usual_low"], "usual_high": sc["usual_high"], "baseline_weeks": sc["baseline_weeks"]}
+    slots = {
+        "ward": w,
+        "ward_label": ward_label(w),
+        "marker_label": ph.MARKER_LABELS[m],
+        "y4": sc["y4"],
+        "window_weeks": RECENT_WEEKS,
+        "usual_low": sc["usual_low"],
+        "usual_high": sc["usual_high"],
+        "baseline_weeks": sc["baseline_weeks"],
+    }
+    if not run["active"]:
+        slots["last_flagged"] = ph.last_flagged(as_of)
     evidence = {
-        "filter": {"ward": w, "specimen": None, "organism": None, "drug": None, "date_from": ph.iso(date_from),
-                   "date_to": ph.iso(as_of), "rule": rule, "marker": m, "population": "marker"},
-        "counts": {**sc, "first_positive_week_start": ph.iso(first_week)},
+        "filter": {
+            "ward": w,
+            "specimen": None,
+            "organism": None,
+            "drug": None,
+            "date_from": iso(date_from),
+            "date_to": iso(as_of),
+            "rule": rule,
+            "marker": m,
+            "population": "marker",
+        },
+        "counts": {**sc, "first_positive_week_start": iso(first_week)},
         "method": LABEL,
-        "params": {"prior": PRIOR_PI, "prior_weeks": PRIOR_WEEKS, "extra_cases": [int(EXTRA_CASES[0]), int(EXTRA_CASES[-1])],
-                   "positive_score": POSITIVE_SCORE, "baseline_weeks_max": 52, "dedup_days": DEDUP_DAYS,
-                   "learning_weeks": LEARN_WEEKS},
+        "params": {
+            "prior": PRIOR_PI,
+            "prior_weeks": PRIOR_WEEKS,
+            "extra_cases": [int(EXTRA_CASES[0]), int(EXTRA_CASES[-1])],
+            "positive_score": POSITIVE_SCORE,
+            "baseline_weeks_max": BASELINE_WEEKS,
+            "dedup_days": DEDUP_DAYS,
+            "learning_weeks": LEARN_WEEKS,
+        },
         "isolate_ids": rows.isolate_id.tolist(),
         "date_basis": ph.DATE_BASIS,
     }
     template_id = "ob_stepup" if run["active"] else "ob_stepup_resolved"
-    return S.make_signal(KIND, _key(run), priority="P3", as_of=ph.iso(as_of), template_id=template_id, slots=slots,
-                         evidence=evidence, ward=w, first_sample_date=ph.iso(rows.sample_date.min()) if len(rows) else None,
-                         section="unusual_patterns", advice=None)
+    return S.make_signal(
+        KIND,
+        _key(run),
+        priority="P3",
+        as_of=iso(as_of),
+        template_id=template_id,
+        slots=slots,
+        evidence=evidence,
+        ward=w,
+        first_sample_date=iso(rows.sample_date.min()) if len(rows) else None,
+        section="unusual_patterns",
+        advice=None,
+    )
 
 
 def detect(ds, as_of, rule="readme_period") -> list[dict]:
     ph.check_rule(rule)
-    as_of = ph.ts(as_of)
+    as_of = ts(as_of)
     prev_ids = {S.signal_id(KIND, _key(r)) for r in _standalone(ds, as_of - pd.Timedelta(days=7)) if r["active"]}
     now, resolved = [], []
     for run in _standalone(ds, as_of):

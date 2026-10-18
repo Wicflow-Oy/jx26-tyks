@@ -1,5 +1,6 @@
 """Headline numbers checked against the raw CSVs: each test derives a demo number with plain pandas straight from the
 dataset files (no aei code in the derivation) and requires the product's output to equal it and the pinned value."""
+
 from functools import lru_cache
 
 import pandas as pd
@@ -77,8 +78,9 @@ def icu_mrsa(as_of: str) -> pd.DataFrame:
 
 
 # --------------------------------------------------------------------------- Monday brief
-@pytest.mark.parametrize(("as_of", "patients"), [("2026-03-08", 3), ("2026-03-15", 6), ("2026-03-22", 9),
-                                                 ("2026-03-29", 13)])
+@pytest.mark.parametrize(
+    ("as_of", "patients"), [("2026-03-08", 3), ("2026-03-15", 6), ("2026-03-22", 9), ("2026-03-29", 13)]
+)
 def test_icu_mrsa_cluster_patients_per_week(ds, as_of, patients):
     card = next(s for s in phenotype.detect(ds, as_of) if s["slots"]["ward"] == "ICU")
     assert icu_mrsa(as_of).patient_id.nunique() == card["slots"]["n_patients"] == patients
@@ -101,8 +103,11 @@ def _icu_staph_aureus(as_of: str, drug: str, days: int) -> tuple[int, int]:
 
 @pytest.mark.parametrize(("drug", "now", "year_before"), [("FOX", (13, 20), (1, 71)), ("CLI", (13, 20), (4, 71))])
 def test_icu_staph_aureus_resistance_change(ds, drug, now, year_before):
-    item = next(s for s in resistance_change.detect(ds, "2026-03-29")
-                if s["evidence"]["filter"]["ward"] == "ICU" and s["evidence"]["filter"]["drug"] == drug)
+    item = next(
+        s
+        for s in resistance_change.detect(ds, "2026-03-29")
+        if s["evidence"]["filter"]["ward"] == "ICU" and s["evidence"]["filter"]["drug"] == drug
+    )
     source_now = _icu_staph_aureus("2026-03-29", drug, 28)
     source_before = _icu_staph_aureus("2026-03-01", drug, 364)  # the 52 weeks before the 4-week window
     assert (source_now, source_before) == (tuple(item["slots"]["counts"]), tuple(item["slots"]["counts_prior"]))
@@ -112,8 +117,11 @@ def test_icu_staph_aureus_resistance_change(ds, drug, now, year_before):
 def test_icu_cefoxitin_percentage_rounds_half_up(ds):
     r, n = _icu_staph_aureus("2026-04-05", "FOX", 28)
     assert (r, n) == (10, 16)
-    item = next(s for s in resistance_change.detect(ds, "2026-04-05")
-                if s["evidence"]["filter"]["ward"] == "ICU" and s["evidence"]["filter"]["drug"] == "FOX")
+    item = next(
+        s
+        for s in resistance_change.detect(ds, "2026-04-05")
+        if s["evidence"]["filter"]["ward"] == "ICU" and s["evidence"]["filter"]["drug"] == "FOX"
+    )
     # Cefoxitin is the MRSA screen, so the text counts S. aureus; 62.5 rounds half up to 63
     assert f"{r} of {n} S. aureus ({int(100 * r / n + 0.5)}%" in item["text"]
 
@@ -121,8 +129,13 @@ def test_icu_cefoxitin_percentage_rounds_half_up(ds):
 def _policy_population(as_of: str, days: int = 364) -> tuple[int, int]:
     """Trimethoprim R of tested, urinary E. coli, women, PHC-N + PHC-S, 52 weeks to as_of, README rule."""
     x = source()
-    rows = x[(x.organism == ECOLI) & (x.specimen == "urine") & x.ward_code.isin(["PHC-N", "PHC-S"])
-             & (x.sex == "F") & x.TMP.notna()]
+    rows = x[
+        (x.organism == ECOLI)
+        & (x.specimen == "urine")
+        & x.ward_code.isin(["PHC-N", "PHC-S"])
+        & (x.sex == "F")
+        & x.TMP.notna()
+    ]
     return resistant_of_tested(first_per_patient(window(rows, as_of, days)), "TMP")
 
 
@@ -144,8 +157,11 @@ def test_expert_rule_counts_over_every_isolate(ds):
     cro_r_amp_or_cxm_s = x.organism.isin(cro_scope) & (x.CRO == "R") & ((x.AMP == "S") | (x.CXM == "S"))
     tzp_r_amp_s = x.organism.isin([ECOLI, "Proteus mirabilis"]) & (x.TZP == "R") & (x.AMP == "S")
     product = expert_rules.rule_counts(ds.isolates)
-    assert (len(esbl), int(((esbl.CXM == "S") | (esbl.CRO == "S")).sum())) == tuple(product["esbl_ceph_s"].values()) \
+    assert (
+        (len(esbl), int(((esbl.CXM == "S") | (esbl.CRO == "S")).sum()))
+        == tuple(product["esbl_ceph_s"].values())
         == (517, 0)
+    )
     assert (len(mrsa), int((mrsa.FOX == "S").sum())) == tuple(product["mrsa_fox_s"].values()) == (111, 0)
     # was 109 in two overlapping rules for E. coli and K. pneumoniae only: now one rule (brief review D7) whose scope
     # adds K. oxytoca and P. mirabilis (clinical review D-L6)
@@ -165,21 +181,37 @@ def test_phc_s_data_gap_week_ending_14_dec_2025(ds):
     assert "usually 51" in item["text"]
 
 
-@pytest.mark.parametrize(("marker", "ward", "organism", "specimen", "sample_date", "care_day", "days_since_prev"), [
-    ("cpe", "MED-A", "Klebsiella pneumoniae", "urine", "2026-09-21", 3, 142),
-    ("vre", "GER", "Enterococcus faecalis", "wound", "2026-09-11", 2, 214),
-])
-def test_thl_alert_organism_cards_on_27_sep_2026(ds, marker, ward, organism, specimen, sample_date, care_day,
-                                                 days_since_prev):
+@pytest.mark.parametrize(
+    ("marker", "ward", "organism", "specimen", "sample_date", "care_day", "days_since_prev"),
+    [
+        ("cpe", "MED-A", "Klebsiella pneumoniae", "urine", "2026-09-21", 3, 142),
+        ("vre", "GER", "Enterococcus faecalis", "wound", "2026-09-11", 2, 214),
+    ],
+)
+def test_thl_alert_organism_cards_on_27_sep_2026(
+    ds, marker, ward, organism, specimen, sample_date, care_day, days_since_prev
+):
     x = source()
-    cases = x[(x[marker] == 1) & (x.sample_date <= "2026-09-27")].drop_duplicates("patient_id")  # first case per patient
+    cases = x[(x[marker] == 1) & (x.sample_date <= "2026-09-27")].drop_duplicates(
+        "patient_id"
+    )  # first case per patient
     case, previous = cases.iloc[-1], cases.iloc[-2]
-    card = next(s for s in thl.detect(ds, "2026-09-27")
-                if s["evidence"]["filter"].get("marker") == marker and s["evidence"]["filter"].get("isolate_ids_only"))
+    card = next(
+        s
+        for s in thl.detect(ds, "2026-09-27")
+        if s["evidence"]["filter"].get("marker") == marker and s["evidence"]["filter"].get("isolate_ids_only")
+    )
     assert card["evidence"]["isolate_ids"] == [case.isolate_id]
-    assert (case.ward_code, case.organism, case.specimen, str(case.sample_date.date())) == \
-        (card["slots"]["ward"], card["evidence"]["filter"]["organism"], card["slots"]["specimen"],
-         card["slots"]["sample_date"]) == (ward, organism, specimen, sample_date)
+    assert (
+        (case.ward_code, case.organism, case.specimen, str(case.sample_date.date()))
+        == (
+            card["slots"]["ward"],
+            card["evidence"]["filter"]["organism"],
+            card["slots"]["specimen"],
+            card["slots"]["sample_date"],
+        )
+        == (ward, organism, specimen, sample_date)
+    )
     assert int(case.care_day) == card["evidence"]["counts"]["care_day"] == care_day
     assert (int(case.care_day) >= 3) == card["evidence"]["counts"]["hospital_onset"]
     assert (case.sample_date - previous.sample_date).days == card["slots"]["days_since_prev"] == days_since_prev
@@ -202,7 +234,7 @@ def test_uro_esbl_seed_alert_matches_the_data():
     s, esbl = seed("seed-uro-esbl-2025"), uro_esbl_e_coli()
     run = window(esbl, "2025-06-08", 10)  # 30 May to 8 Jun: the data behind the 9 Jun approval
     assert window(esbl, "2025-05-29", 14).empty  # nothing in the two weeks before: the run starts on 30 May
-    assert run.patient_id.nunique() == 6 and "6 patients since 30 May" in s["message"]
+    assert run.patient_id.nunique() == 6 and "6 patients sampled 30 May to 8 Jun" in s["message"]
     [antibiogram] = run.apply(profile, axis=1).unique()
     resistant = [d for d in README_DRUG_ORDER if f"{d}:R" in antibiogram.split()]
     assert resistant == ["AMP", "CXM", "CRO", "CIP", "TMP"] == s["resistant_to"] == s["drugs"]
@@ -213,7 +245,10 @@ def test_uro_esbl_seed_alert_matches_the_data():
 def test_icu_mrsa_seed_alert_matches_the_data():
     s, run = seed("seed-icu-mrsa-2026"), icu_mrsa("2026-03-08")
     assert run.patient_id.nunique() == 3 and set(run.apply(profile, axis=1)) == {"FOX:R VAN:S CLI:R"}
-    assert "3 patients with one antibiogram (cefoxitin R, clindamycin R, vancomycin S) since 3 Mar" in s["message"]
+    assert run.sample_date.min() == pd.Timestamp("2026-03-03")
+    assert (
+        "3 patients sampled 3 to 8 Mar with one antibiogram (cefoxitin R, clindamycin R, vancomycin S)" in s["message"]
+    )
     # its reported R plus every beta-lactam on the panel (MRSA: EUCAST Staphylococcus expert rule 1)
     assert set(s["resistant_to"]) == set(s["drugs"]) == {"FOX", "CLI"} | BETA_LACTAMS_ON_PANEL
 
@@ -229,19 +264,27 @@ def test_uro_esbl_scenario_patient_is_a_woman_on_urology_like_the_clone():
 
 
 # --------------------------------------------------------------------------- My ward
-GRAM_NEGATIVES = {ECOLI, "Proteus mirabilis", "Klebsiella pneumoniae", "Klebsiella oxytoca", "Citrobacter freundii",
-                  "Pseudomonas aeruginosa"}
+GRAM_NEGATIVES = {
+    ECOLI,
+    "Proteus mirabilis",
+    "Klebsiella pneumoniae",
+    "Klebsiella oxytoca",
+    "Citrobacter freundii",
+    "Pseudomonas aeruginosa",
+}
 
 
 def covered_of_tested(rows: pd.DataFrame, drug: str) -> tuple[int, int]:
     """Coverage per README/EUCAST for this population: S covers; an S. aureus beta-lactam follows the cefoxitin screen;
     vancomycin never covers a Gram-negative (intrinsic, counted as tested); an untested isolate is left out."""
+
     def value(r):
         if r.organism == SA and drug in ("TZP", "MEM"):
             return r.FOX
         if r.organism in GRAM_NEGATIVES and drug == "VAN":
             return "R"
         return r[drug]
+
     v = rows.apply(value, axis=1).dropna()
     return int((v == "S").sum()), len(v)
 
@@ -259,13 +302,20 @@ def test_icu_blood_and_wound_coverage_last_4_weeks(ds):
         assert covered_of_tested(rows, drug) == (cells[drug]["covered"], cells[drug]["tested"]) == expected, drug
 
 
+def not_covered_of_tested(view: dict, drug: str) -> tuple[int, int]:
+    """A My ward cell as R of n: for E. coli and these drugs no species rule applies, so not covered = resistant."""
+    observed = next(r for r in view["rows"] if r["drug"] == drug)["cells"]["12m"]["observed"]
+    return observed["tested"] - observed["covered"], observed["tested"]
+
+
 @pytest.mark.parametrize(("sex", "expected"), [("M", (132, 957)), ("F", (89, 1587))])
 def test_urinary_e_coli_ciprofloxacin_by_sex_last_12_months(ds, sex, expected):
     x = source()
-    rows = first_per_patient(window(x[(x.organism == ECOLI) & (x.specimen == "urine") & (x.sex == sex)], "2026-09-27", 364))
-    view = views.antibiogram(ds, "2026-09-27", specimen_group="urine", window="12m", organism=ECOLI, sex=sex)
-    cip = next(d for o in view["organisms"] for d in o["drugs"] if d["drug"] == "CIP")
-    assert resistant_of_tested(rows, "CIP") == (cip["r"], cip["n"]) == expected
+    rows = first_per_patient(
+        window(x[(x.organism == ECOLI) & (x.specimen == "urine") & (x.sex == sex)], "2026-09-27", 364)
+    )
+    view = views.my_ward(ds, "2026-09-27", specimen_group="urine", organism=ECOLI, sex=sex, windows=("12m",))
+    assert resistant_of_tested(rows, "CIP") == not_covered_of_tested(view, "CIP") == expected
 
 
 @pytest.mark.parametrize(("as_of", "expected"), [("2025-07-06", (39, 375)), ("2026-09-27", (12, 328))])
@@ -273,28 +323,38 @@ def test_uro_e_coli_ceftriaxone_under_30_day_rule(ds, as_of, expected):
     x = source()
     x = x[first_in_30_days(x)]
     rows = window(x[(x.ward_code == "URO") & (x.organism == ECOLI) & (x.specimen == "urine")], as_of, 364)
-    view = views.antibiogram(ds, as_of, ward="URO", specimen_group="urine", window="12m", rule="30d", organism=ECOLI)
-    cro = next(d for o in view["organisms"] for d in o["drugs"] if d["drug"] == "CRO")
-    assert resistant_of_tested(rows, "CRO") == (cro["r"], cro["n"]) == expected
+    view = views.my_ward(ds, as_of, ward="URO", specimen_group="urine", organism=ECOLI, windows=("12m",), rule="30d")
+    assert resistant_of_tested(rows, "CRO") == not_covered_of_tested(view, "CRO") == expected
 
 
 # --------------------------------------------------------------------------- Doctor's order screen
 COMMUNITY = ["ED", "PHC-N", "PHC-S"]  # an ED or health-centre order pools these units for the patient's home area
 
 
-@pytest.mark.parametrize(("as_of", "patient_id", "unit", "drug", "last_4_weeks", "last_12_months"), [
-    ("2026-06-21", "P001889", "PHC-N", "TMP", (14, 55), (85, 435)),  # phc-tmp
-    ("2026-03-15", "P008135", "ED", "TMP", (5, 38), (69, 405)),  # ed-own-history
-    ("2026-03-15", "P005490", "MED-B", "NIT", (0, 12), (0, 149)),  # medb-quiet
-])
+@pytest.mark.parametrize(
+    ("as_of", "patient_id", "unit", "drug", "last_4_weeks", "last_12_months"),
+    [
+        ("2026-06-21", "P001889", "PHC-N", "TMP", (14, 55), (85, 435)),  # phc-tmp
+        ("2026-03-15", "P008135", "ED", "TMP", (5, 38), (69, 405)),  # ed-own-history
+        ("2026-03-15", "P005490", "MED-B", "NIT", (0, 12), (0, 149)),  # medb-quiet
+    ],
+)
 def test_order_screen_uti_numbers_for_demo_patients(ds, as_of, patient_id, unit, drug, last_4_weeks, last_12_months):
     x = source()
     patient = x[x.patient_id == patient_id].iloc[0]
     pop = x[(x.organism == ECOLI) & (x.specimen == "urine") & (x.sex == patient.sex)]
-    pop = pop[pop.ward_code.isin(COMMUNITY) & (pop.home_area == patient.home_area)] if unit in COMMUNITY \
+    pop = (
+        pop[pop.ward_code.isin(COMMUNITY) & (pop.home_area == patient.home_area)]
+        if unit in COMMUNITY
         else pop[pop.ward_code == unit]
+    )
     ctx = cds.order_context(ds, as_of, patient_id, unit, "uti", drug, "sign")
     nums = next(line for line in ctx["lines"] if line["key"] == "your_drug")["numbers"]
-    assert resistant_of_tested(first_per_patient(window(pop, as_of, 28)), drug) == (nums["r"], nums["n"]) == last_4_weeks
-    assert resistant_of_tested(first_per_patient(window(pop, as_of, 364)), drug) == (nums["r12"], nums["n12"]) \
+    assert (
+        resistant_of_tested(first_per_patient(window(pop, as_of, 28)), drug) == (nums["r"], nums["n"]) == last_4_weeks
+    )
+    assert (
+        resistant_of_tested(first_per_patient(window(pop, as_of, 364)), drug)
+        == (nums["r12"], nums["n12"])
         == last_12_months
+    )

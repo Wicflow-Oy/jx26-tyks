@@ -8,6 +8,7 @@
 - with --narration and ANTHROPIC_API_KEY set: model narration for every demo-Monday item, recorded for replay, so the
   public demo shows it with no key. Each call counts toward the daily spend cap.
 """
+
 import argparse
 import json
 import os
@@ -58,9 +59,15 @@ def replay_weeks(ds) -> list[dict]:
     """The slider's tick marks over the replay range. Counts are None for weeks not precomputed yet: computing all of
     them takes about a minute, which a request cannot wait for."""
     ticks = read_ticks(ds)
-    return [{"as_of": a, "monday": _day(pd.Timestamp(a) + pd.Timedelta(days=1)),
-             "n_p1": ticks.get(a, {}).get("n_p1"), "n_signals": ticks.get(a, {}).get("n_signals")}
-            for a in replay_range()]
+    return [
+        {
+            "as_of": a,
+            "monday": _day(pd.Timestamp(a) + pd.Timedelta(days=1)),
+            "n_p1": ticks.get(a, {}).get("n_p1"),
+            "n_signals": ticks.get(a, {}).get("n_signals"),
+        }
+        for a in replay_range()
+    ]
 
 
 def warm_signals(ds, weeks="all") -> list[dict]:
@@ -94,10 +101,17 @@ def record_narration(ds) -> tuple[int, int]:
 
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(prog="python -m aei.precompute", description="Warm the caches before serving.")
-    parser.add_argument("--weeks", choices=("all", "demo"), default="all",
-                        help="all: the whole replay range (about a minute); demo: the demo Mondays and the weeks before")
-    parser.add_argument("--narration", action="store_true",
-                        help="also record model narration for the demo weeks (needs ANTHROPIC_API_KEY)")
+    parser.add_argument(
+        "--weeks",
+        choices=("all", "demo"),
+        default="all",
+        help="all: the whole replay range (about a minute); demo: the demo Mondays and the weeks before",
+    )
+    parser.add_argument(
+        "--narration",
+        action="store_true",
+        help="also record model narration for the demo weeks (needs ANTHROPIC_API_KEY)",
+    )
     args = parser.parse_args(argv)
     start = time.perf_counter()
     ds = data.load()
@@ -106,19 +120,25 @@ def main(argv=None) -> None:
     t = time.perf_counter()
     rows = warm_signals(ds, args.weeks)
     slowest = max(rows, key=lambda r: r["seconds"])
-    print(f"signals: {len(rows)} weeks in {time.perf_counter() - t:.1f} s "
-          f"(slowest {slowest['as_of']}, {slowest['seconds']:.1f} s); tick marks in {_ticks_file()}")
+    print(
+        f"signals: {len(rows)} weeks in {time.perf_counter() - t:.1f} s "
+        f"(slowest {slowest['as_of']}, {slowest['seconds']:.1f} s); tick marks in {_ticks_file()}"
+    )
 
     for as_of in demo_as_ofs():
         t = time.perf_counter()
         counts = brief.build_brief(ds, as_of)["counts"]
-        print(f"brief for Monday after {as_of}: {counts['P1']} P1, {counts['P2']} P2 in {time.perf_counter() - t:.2f} s")
+        print(
+            f"brief for Monday after {as_of}: {counts['P1']} P1, {counts['P2']} P2 in {time.perf_counter() - t:.2f} s"
+        )
 
     if args.narration:
         if narrator.key_set():
             t = time.perf_counter()
             model, fallback = record_narration(ds)
-            print(f"narration: {model} recorded or cached, {fallback} template fallbacks in {time.perf_counter() - t:.1f} s")
+            print(
+                f"narration: {model} recorded or cached, {fallback} template fallbacks in {time.perf_counter() - t:.1f} s"
+            )
         else:
             print("narration: skipped, ANTHROPIC_API_KEY is not set (the demo uses the templates)")
     print(f"done in {time.perf_counter() - start:.1f} s")

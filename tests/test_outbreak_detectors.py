@@ -1,13 +1,16 @@
 """Workstream B1: outbreak detectors (phenotype, thl, stepup, seen_before). Offline and deterministic.
 Goldens from CONTRACTS.md section 5.2 and analysis 09_leadtime, 08_hidden, 47_outbreak_prob, 52_seen_before_expert_rules."""
+
 import json
 import re
 
 import pandas as pd
 import pytest
+from test_trend_detectors import check_title, check_title_template
 
+from aei import brief, data, render, templates
 from aei import config as C
-from aei import data, render, templates
+from aei import detectors as registry
 from aei import signal as sig
 from aei.detectors import phenotype, seen_before, stepup, thl
 from aei.templates_outbreak import TEMPLATES as OUTBREAK_TEMPLATES
@@ -16,10 +19,26 @@ DETECTORS = [phenotype, thl, stepup, seen_before]
 ICU_PATTERN = "FOX:R VAN:S CLI:R"
 URO_PATTERN = "AMP:R MEC:S TZP:S CXM:R CRO:R MEM:S CIP:R TMP:R NIT:S"
 DIGITS = re.compile(r"\d+")
-BANNED = ["predict", "forecast", "odds", "probability", "best choice", "recommended drug", "likely to", "will rise",
-          "s/i/r", "decoy", "outbreak confirmed", "zero resistance"]
-SECTION_PRIORITY = {"phenotype_cluster": ("unusual_patterns", {"P1", "P2"}), "thl_rule": ("unusual_patterns", {"P1", "P2"}),
-                    "count_stepup": ("unusual_patterns", {"P3"}), "seen_before": ("seen_before", {"info"})}
+BANNED = [
+    "predict",
+    "forecast",
+    "odds",
+    "probability",
+    "best choice",
+    "recommended drug",
+    "likely to",
+    "will rise",
+    "s/i/r",
+    "decoy",
+    "outbreak confirmed",
+    "zero resistance",
+]
+SECTION_PRIORITY = {
+    "phenotype_cluster": ("unusual_patterns", {"P1", "P2"}),
+    "thl_rule": ("unusual_patterns", {"P1", "P2"}),
+    "count_stepup": ("unusual_patterns", {"P3"}),
+    "seen_before": ("seen_before", {"info"}),
+}
 
 
 def check_signal(s: dict) -> None:
@@ -40,6 +59,10 @@ def check_signal(s: dict) -> None:
     shown = " ".join([s["text"], str(s["advice"] or ""), ev["method"], str(ev.get("label", ""))]).lower()
     for word in BANNED:
         assert word not in shown, (word, shown)
+    check_title(registry.with_title(s))
+    if s["status"] == "resolved":  # brief D5: what was last flagged, not last week's present tense
+        assert s["template_id"].endswith("_resolved") and "Resolved. Last flagged week ending" in s["text"]
+        assert s["advice"] is None
 
 
 def one(sigs: list, **match) -> dict:
@@ -54,14 +77,20 @@ def icu_clusters(ds, as_of) -> list:
 
 def truncated(ds, as_of) -> data.Dataset:
     end = pd.Timestamp(as_of)
-    return data.Dataset(isolates=ds.isolates[ds.isolates.sample_date <= end].copy(),
-                        cultures=ds.cultures[ds.cultures.sample_date <= end].copy(), patients=ds.patients)
+    return data.Dataset(
+        isolates=ds.isolates[ds.isolates.sample_date <= end].copy(),
+        cultures=ds.cultures[ds.cultures.sample_date <= end].copy(),
+        patients=ds.patients,
+    )
 
 
 # ---------------------------------------------------------------- phenotype clusters
 
-@pytest.mark.parametrize("as_of, n_patients, n_share", [("2026-03-07", 3, 3), ("2026-03-13", 5, 5),
-                                                         ("2026-03-20", 8, 8), ("2026-03-27", 13, 12)])
+
+@pytest.mark.parametrize(
+    "as_of, n_patients, n_share",
+    [("2026-03-07", 3, 3), ("2026-03-13", 5, 5), ("2026-03-20", 8, 8), ("2026-03-27", 13, 12)],
+)
 def test_icu_mrsa_cluster_counts_by_as_of(ds, as_of, n_patients, n_share):
     (s,) = icu_clusters(ds, as_of)
     assert (s["slots"]["n_patients"], s["slots"]["n_share"]) == (n_patients, n_share)
@@ -82,7 +111,15 @@ def test_icu_cluster_status_across_weeks(ds):
     weeks = [str(d.date()) for d in pd.date_range("2026-03-01", "2026-04-19", freq="7D")]
     seen = {w: icu_clusters(ds, w) for w in weeks}
     assert [s[0]["status"] if s else None for s in seen.values()] == [
-        None, "new", "ongoing", "ongoing", "ongoing", "ongoing", "resolved", None]
+        None,
+        "new",
+        "ongoing",
+        "ongoing",
+        "ongoing",
+        "ongoing",
+        "resolved",
+        None,
+    ]
     assert len({s[0]["id"] for s in seen.values() if s}) == 1
     linked = [[x["status"] for x in seen_before.detect(ds, w) if x["ward"] == "ICU"] for w in weeks]
     assert linked == [[], ["new"], ["ongoing"], ["ongoing"], ["ongoing"], ["ongoing"], ["resolved"], []]
@@ -108,8 +145,15 @@ def test_phenotype_card_separates_the_model_range_from_the_observed_count(ds):
     """Brief D6 / clinical D-L5: the range is a model at the hospital-wide rate, and the observed count stands beside it."""
     icu = one(phenotype.detect(ds, "2026-03-08"), ward="ICU")
     assert unit_patients_with_pattern(ds, "ICU", "Staphylococcus aureus", ICU_PATTERN, "2026-03-03") == 0
-    assert ("Expected with this antibiogram at the hospital-wide rate: 0–2 patients a year on this unit (observed in "
-            "the year before: 0). This antibiogram was 9% of MRSA patients hospital-wide in the year before.") in icu["text"]
+    # Re-pinned: the background share now prints its x of n (3 of 34), as the seen-before card does
+    assert (
+        "Expected with this antibiogram at the hospital-wide rate: 0–2 patients a year on this unit (observed in the "
+        "year before: 0). In the year before, 3 of 34 MRSA patients hospital-wide had this antibiogram (9%)."
+    ) in icu["text"]
+    assert (
+        icu["template_id"] == "ob_phenotype_marker__ok"
+        and registry.with_title(icu)["title"] == "ICU: possible cluster of MRSA"
+    )
     uro = one(phenotype.detect(ds, "2025-06-08"), ward="URO")
     assert unit_patients_with_pattern(ds, "URO", "Escherichia coli", URO_PATTERN, "2025-05-30") == 3
     assert "0–6 patients a year on this unit (observed in the year before: 3)" in uro["text"]
@@ -134,19 +178,34 @@ def test_rule_is_validated_and_echoed(ds):
         phenotype.detect(ds, "2026-03-15", rule="weekly")
 
 
-def test_case_file_helpers(ds):
+def test_case_file_rows(ds):
+    """The case file lists the cluster's isolates and, for its seen-before match, the earlier patients (brief.py)."""
     (s,) = icu_clusters(ds, "2026-03-27")
-    rows = phenotype.line_list(ds, s)
-    assert sum(r["first_for_patient"] for r in rows) == 13 and "patient_id" not in rows[0]
-    curve = phenotype.epi_curve(ds, s)
-    assert sum(d["n"] for d in curve) == 13 and sum(d["n_same_pattern"] for d in curve) == 12
-    assert curve[-1]["date"] == "2026-03-27"
-    assert seen_before.matches(ds, s)["n_elsewhere_before"] == 11
+    rows = brief.evidence_rows(ds, s, "2026-03-27")
+    assert rows.patient_id.nunique() == 13 and "patient_id" not in brief.line_list(rows)[0]
+    assert sum(d["n"] for d in brief.epi_curve(rows, s["evidence"]["filter"], "2026-03-27")) == len(rows)
     linked = one(seen_before.detect(ds, "2026-03-27"), ward="ICU")
-    assert sum(d["n"] for d in phenotype.epi_curve(ds, linked)) == 11
+    assert brief.evidence_rows(ds, linked, "2026-03-27").patient_id.nunique() == 11
+
+
+def test_competing_explanations_are_counts_in_words(ds):
+    """Each hypothesis keeps its rating code and states its counts as x of n (no percentage beside a small count, no
+    Python list or boolean), with p-values as "p < 0.001"."""
+    (s,) = icu_clusters(ds, "2026-03-29")
+    hyp = {h["id"]: h for h in s["evidence"]["competing_explanations"]["hypotheses"]}
+    assert (hyp["H1"]["label"], hyp["H1"]["rating"]) == ("Transmission on the unit", "strong")
+    assert hyp["H1"]["evidence"] == (
+        "patients: 13 observed vs 0.07 expected (p < 0.001); with the most common antibiogram: 12 of 13, vs 3 of 34 "
+        "isolates in the year before (p < 0.001); hospital-onset: 10 of 13"
+    )
+    assert hyp["H6"]["evidence"] == "every patient's isolate flagged MRSA is cefoxitin R"
+    for h in hyp.values():
+        assert not any(t in h["evidence"] for t in ("%", "[", "True", "False")), h["evidence"]
+        assert render.render_id(h["template_id"], h["slots"]) == h["evidence"]
 
 
 # ---------------------------------------------------------------- THL rule cards
+
 
 def test_vre_card_on_ger_by_14_sep_2026_brief(ds):
     assert [s for s in thl.detect(ds, "2026-09-06") if s["ward"] == "GER"] == []
@@ -161,7 +220,9 @@ def test_thl_actions_follow_thl_2_2020(ds):
     assert ger_kp["organism"] == "Klebsiella pneumoniae"
     assert ger_kp["evidence"]["action"].startswith("Contact precautions; screen exposed patients")
     uro = one(phenotype.detect(ds, "2025-06-08"), ward="URO")  # ESBL E. coli: contact precautions by risk assessment
-    assert uro["evidence"]["thl_rule"]["action"].startswith("Standard precautions; contact precautions by risk assessment")
+    assert uro["evidence"]["thl_rule"]["action"].startswith(
+        "Standard precautions; contact precautions by risk assessment"
+    )
     (icu,) = icu_clusters(ds, "2026-03-15")
     assert "new MRSA strains go to the THL reference lab" in icu["evidence"]["thl_rule"]["action"]
     ed = one(thl.detect(ds, "2026-02-01"), ward="ED")  # K. oxytoca CPE, outpatient: carrier flag, strain by agreement
@@ -183,6 +244,7 @@ def test_marker_cluster_check_folds_into_phenotype_cluster(ds):
 
 # ---------------------------------------------------------------- count step-up
 
+
 def test_stepup_is_attached_as_evidence(ds):
     (icu,) = icu_clusters(ds, "2026-03-15")
     assert icu["evidence"]["stepup"]["positive"] and icu["evidence"]["stepup"]["y4"] == 6
@@ -199,10 +261,12 @@ def test_stepup_is_never_p1_on_its_own(ds, monkeypatch):
         assert s["kind"] == "count_stepup" and s["priority"] == "P3"
         check_signal(s)
     ended = one(stepup.detect(ds, "2026-04-19"), ward="ICU")  # a resolved item never says "test positive"
-    assert ended["status"] == "resolved" and "no longer positive" in ended["text"]
+    assert ended["status"] == "resolved" and "positive" not in ended["text"]
+    assert ended["text"].startswith("ICU: MRSA count step-up test. Resolved. Last flagged week ending 12 Apr 2026")
 
 
 # ---------------------------------------------------------------- seen before
+
 
 def test_seen_before_icu_mrsa_before_the_cluster(ds):
     s = one(seen_before.detect(ds, "2026-03-29"), ward="ICU")
@@ -213,7 +277,9 @@ def test_seen_before_icu_mrsa_before_the_cluster(ds):
     assert "earlier patients elsewhere: 11 (ED 4, SURG 4, MED-A 1, PHC-N 1, PHC-S 1)" in s["text"]  # not "other 3"
     # Re-pinned from 23 of 94 "to date": that counted the cluster's own 12 patients (my-ward cross-area note), so the
     # background is now the MRSA patients sampled before the cluster's first sample on 3 Mar
-    assert (c["bg_k"], c["bg_n"]) == (11, 80) and "this antibiogram was 13.8% of 80 MRSA patients" in s["text"]
+    assert (c["bg_k"], c["bg_n"]) == (11, 80)
+    assert "Before this cluster, 11 of 80 MRSA patients had this antibiogram (13.8%), so a match is weak" in s["text"]
+    assert registry.with_title(s)["title"] == "ICU: MRSA antibiogram seen before on other units"
 
 
 def test_seen_before_icu_mrsa_back_on_icu(ds):
@@ -222,11 +288,13 @@ def test_seen_before_icu_mrsa_back_on_icu(ds):
     s = one(seen_before.detect(ds, "2026-09-13"), ward="ICU")
     assert s["slots"]["return_date"] == "2026-09-12" and s["status"] == "new"
     end = one(seen_before.detect(ds, C.DATA_END), ward="ICU")
-    assert (end["slots"]["bg_n"], end["evidence"]["counts"]["bg_k"]) == (110, 25)
-    assert "22.7% of 110 MRSA patients" in end["text"]
+    assert end["slots"]["bg"] == [25, 110] and end["evidence"]["counts"]["bg_k"] == 25
+    assert "To date, 25 of 110 MRSA patients had this antibiogram (22.7%)" in end["text"]
+    assert registry.with_title(end)["title"] == "ICU: MRSA antibiogram back on this unit"
 
 
 # ---------------------------------------------------------------- contract invariants
+
 
 @pytest.mark.parametrize("as_of", ["2026-03-15", "2026-09-13"])
 def test_strictly_as_of(ds, as_of):
@@ -252,3 +320,48 @@ def test_outbreak_templates_have_no_literal_numbers():
     for tid, t in OUTBREAK_TEMPLATES.items():
         assert tid.startswith("ob_") and templates.TEMPLATES[tid] is t
         assert not DIGITS.search(re.sub(r"\{[^}]*\}", "", t["text"])), tid
+        check_title_template(tid)
+
+
+def test_background_share_needs_ten_patients():
+    """Brief D3 rule for every background share: x of n always, no percentage below 10, "small n" from 10 to 29."""
+    slots = {
+        "ward": "ICU",
+        "organism_label": "VRE E. faecium",
+        "pattern": "AMP:R VAN:R",
+        "n_elsewhere": 0,
+        "bg_label": "VRE E. faecium",
+    }
+    for n, key, pct in [(5, "few", None), (20, "weak_low_n", "10.0%, small n"), (40, "weak_ok", "5.0%")]:
+        text = render.render_id(f"ob_seen_before__new__0__{key}", {**slots, "bg": [2, n], "bg_share": 2 / n})
+        assert f"2 of {n} VRE E. faecium patients" in text and (pct in text if pct else "%" not in text), text
+    for state in ("not_enough_data", "low_n", "ok"):
+        assert (
+            f"ob_phenotype_marker__{state}" in templates.TEMPLATES
+            and f"ob_phenotype_plain__{state}" in templates.TEMPLATES
+        )
+
+
+def test_resolved_outbreak_items(ds):
+    """Brief D5: the week after a cluster stops, its card and its seen-before match say so."""
+    (s,) = icu_clusters(ds, "2026-04-12")
+    assert s["status"] == "resolved" and s["advice"] is None
+    assert s["text"] == (
+        "ICU: unusual pattern of MRSA (FOX:R VAN:S CLI:R) since 3 Mar. Resolved. Last flagged week ending 5 Apr 2026; "
+        "last detected 27 Mar. 12 of 13 MRSA patients share this antibiogram."
+    )
+    seen = one(seen_before.detect(ds, "2026-04-12"), ward="ICU")
+    assert seen["status"] == "resolved" and seen["text"] == (
+        "ICU MRSA pattern (FOX:R VAN:S CLI:R). Resolved. Last flagged week ending 5 Apr 2026; the ICU cluster that "
+        "began 3 Mar 2026 was last detected 27 Mar."
+    )
+
+
+def test_outpatient_cluster_action(ds):
+    """THL Ohjaus 2/2020 section 8.1.3: standard precautions at an outpatient unit, ward measures if admitted."""
+    s = one(thl.detect(ds, "2024-08-25"), ward="PHC-S")
+    assert s["template_id"] == "ob_thl_cluster_mixed"
+    assert s["evidence"]["action"].startswith(
+        "Standard precautions at the outpatient unit; contact precautions if admitted"
+    )
+    assert thl.action_text("mrsa", "Staphylococcus aureus", outpatient=True).startswith("Standard precautions")

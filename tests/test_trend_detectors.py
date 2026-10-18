@@ -1,18 +1,17 @@
 """Workstream B2: trend detectors (policy, resistance_change, outlier, expert_rules, completeness) and the registry.
 Offline and deterministic; uses the session `ds` fixture. Goldens from CONTRACTS.md section 5.2 and analysis 35/39/40/44/51/52."""
-import ast
+
 import logging
 import re
 import sys
 import time
 import types
-from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from aei import config as C
-from aei import data, render, stats, templates
+from aei import data, render, stats, templates, templates_outbreak, templates_ui, validator
 from aei import detectors as registry
 from aei.detectors import completeness, expert_rules, outlier, policy, resistance_change
 from aei.templates_trends import MAX_OUTLIER_PAIRS
@@ -22,16 +21,29 @@ MINE = [policy, resistance_change, outlier, expert_rules, completeness]
 DEMO_AS_OF = [str((pd.Timestamp(m) - pd.Timedelta(days=1)).date()) for m in C.DEMO_MONDAYS]
 DIGITS = re.compile(r"\d+")
 FILTER_KEYS = {"ward", "specimen", "organism", "drug", "date_from", "date_to", "rule"}
-BANNED = ["predict", "forecast", "odds", "probability", "best choice", "recommended drug", "ai predicts", "likely to",
-          "will rise", "s/i/r", "decoy", "outbreak confirmed"]
+BANNED = [
+    "predict",
+    "forecast",
+    "odds",
+    "probability",
+    "best choice",
+    "recommended drug",
+    "ai predicts",
+    "likely to",
+    "will rise",
+    "s/i/r",
+    "decoy",
+    "outbreak confirmed",
+]
 
 
 # ---------------------------------------------------------------- helpers shared with test_brief.py
 
-def rendered_slot_digits(s: dict) -> set[str]:
+
+def rendered_slot_digits(s: dict, field: str = "text") -> set[str]:
     t = templates.TEMPLATES[s["template_id"]]
     vals = []
-    for name, kind in render.slots_in(t["text"]):
+    for name, kind in render.slots_in(t[field]):
         kind = kind or t.get("formats", {}).get(name, "text")
         vals.append(render.fmt(s["slots"][name], kind))
     return set(DIGITS.findall(" ".join(vals)))
@@ -49,10 +61,33 @@ def check_text(s: dict) -> None:
     assert "zero resistance" not in low.replace("not zero resistance", "")
 
 
+def check_title(s: dict) -> None:
+    """The row title is its template's title rendered from the signal's slots; digits only from slots; wording rules."""
+    t = templates.TEMPLATES[s["template_id"]]
+    assert s["title"] == render.render(t["title"], s["slots"], t.get("formats"))
+    allowed = rendered_slot_digits(s, "title")
+    assert all(d in allowed for d in DIGITS.findall(s["title"])), s["title"]
+    assert not any(w in s["title"].lower() for w in BANNED + ["zero resistance"]), s["title"]
+
+
+def check_title_template(tid: str) -> None:
+    """A title template has no literal digit and passes the narrator's skeleton check (prediction, restricted and
+    number words, comparisons), with its own slots allowed."""
+    t = templates.TEMPLATES[tid]
+    skeleton = re.sub(r"\{([a-z_][a-z0-9_]*):[a-z0-9_]+\}", r"{\1}", t["title"])
+    names = {name for name, _ in render.slots_in(t["title"])}
+    assert not re.search(r"\d", render.SLOT.sub("", t["title"])), tid
+    res = validator.validate_skeleton(skeleton, names)
+    assert res.ok, (tid, res.errors)
+
+
 def truncated(ds, as_of) -> data.Dataset:
     end = pd.Timestamp(as_of)
-    return data.Dataset(isolates=ds.isolates[ds.isolates.sample_date <= end].copy(),
-                        cultures=ds.cultures[ds.cultures.sample_date <= end].copy(), patients=ds.patients)
+    return data.Dataset(
+        isolates=ds.isolates[ds.isolates.sample_date <= end].copy(),
+        cultures=ds.cultures[ds.cultures.sample_date <= end].copy(),
+        patients=ds.patients,
+    )
 
 
 def comparable(sigs: list) -> list:
@@ -61,12 +96,18 @@ def comparable(sigs: list) -> list:
 
 # ---------------------------------------------------------------- policy line (trimethoprim)
 
+
 def tmp_women_primary_care(ds, end) -> tuple[int, int]:
     """51_codex_fixes_check by hand: tested urinary E. coli from women in primary care, first per patient in the
     52 weeks ending `end`; returns (resistant, tested)."""
     x = ds.isolates
-    pop = x[(x.organism == "Escherichia coli") & (x.specimen == "urine") & x.ward_code.isin(["PHC-N", "PHC-S"])
-            & (x.sex == "F") & x.TMP.notna()]
+    pop = x[
+        (x.organism == "Escherichia coli")
+        & (x.specimen == "urine")
+        & x.ward_code.isin(["PHC-N", "PHC-S"])
+        & (x.sex == "F")
+        & x.TMP.notna()
+    ]
     w = data.window(pop, end, 364).sort_values(["sample_date", "isolate_id"]).drop_duplicates("patient_id")
     return int((w.TMP == "R").sum()), len(w)
 
@@ -79,8 +120,7 @@ def test_policy_peak_golden(ds):
     assert st["counting_rule"] == "readme_period" and st["window_days"] == 364
     lo, hi = st["interval"]
     assert lo < st["rate"] < hi
-    assert st["local_guide_alternative"] == C.POLICY_LINES[0]["local_guide_alternative"]
-    assert st["local_guide_alternative"]["text"] == "pivmecillinam (local guide)"
+    assert "local_guide_alternative" not in st  # a line never names another drug (18 Oct decision)
     # prior-year rate: the same rolling window ending 52 weeks earlier
     assert st["prior_as_of"] == "2025-06-22"
     assert (st["x_prior"], st["n_prior"]) == (122, 769) == tmp_women_primary_care(ds, "2025-06-22")
@@ -109,9 +149,10 @@ def test_policy_resolved_item_shows_last_flagged_and_now(ds):
     """Brief D5: the week after the line is crossed back, the item says what was flagged and what the rate is now."""
     (s,) = policy.detect(ds, "2026-07-05")
     assert s["status"] == "resolved" and s["advice"] is None
-    assert s["text"] == ("Trimethoprim: urinary E. coli in women in primary care. Resolved. Last flagged week ending "
-                         "28 Jun 2026: 20.1% resistant (158 of 787); now 19.7% (156 of 790, last 52 weeks), below the "
-                         "local 20% line.")
+    assert s["text"] == (
+        "Trimethoprim: urinary E. coli in women in primary care. Resolved. Last flagged week ending 28 Jun 2026: 20.1% "
+        "resistant (158 of 787); now 19.7% (156 of 790, last 52 weeks), below the local 20% line."
+    )
     assert (s["evidence"]["counts"]["resistant"], s["evidence"]["counts"]["tested"]) == (156, 790)
     assert policy.detect(ds, "2026-07-12")[0]["status"] == "new"  # back above the line: a new run
     assert policy.detect(ds, "2026-08-02") == []  # resolved items are listed for one week only
@@ -134,13 +175,14 @@ def test_policy_signal(ds):
     (s,) = policy.detect(ds, "2026-06-21")
     assert s["kind"] == "policy_line" and s["section"] == "policy" and s["priority"] == "P2"
     assert s["advice"] == "Review the empirical UTI guidance" == C.POLICY_LINES[0]["message"]
-    assert s["slots"]["alternative"] == "pivmecillinam (local guide)"
+    assert "alternative" not in s["slots"] and "pivmecillinam" not in s["text"].lower()
     assert "20.4%" in s["text"] and "160 of 786" in s["text"] and "20%" in s["text"]
     assert s["evidence"]["filter"]["ward"] == ["PHC-N", "PHC-S"] and s["evidence"]["filter"]["sex"] == "F"
     assert policy.detect(ds, "2026-09-27") == []
 
 
 # ---------------------------------------------------------------- expert rules
+
 
 def test_expert_rule_goldens(ds):
     c = expert_rules.rule_counts(ds.isolates)
@@ -151,7 +193,11 @@ def test_expert_rule_goldens(ds):
     _, cro = expert_rules.masks(ds.isolates, "cro_r_amp_or_cxm_s")
     assert c["cro_r_amp_or_cxm_s"]["hits"] == int(cro.sum()) == 139
     assert ds.isolates[cro].organism.value_counts().to_dict() == {
-        "Escherichia coli": 64, "Klebsiella pneumoniae": 45, "Proteus mirabilis": 19, "Klebsiella oxytoca": 11}
+        "Escherichia coli": 64,
+        "Klebsiella pneumoniae": 45,
+        "Proteus mirabilis": 19,
+        "Klebsiella oxytoca": 11,
+    }
     assert c["tzp_r_amp_s"]["hits"] == 276  # new rule (clinical D-L6; EUCAST Expert Rules v3.3 rule 1)
     assert set(c) == {r["id"] for r in C.EXPERT_RULES}
 
@@ -172,6 +218,7 @@ def test_expert_rules_week(ds):
 
 # ---------------------------------------------------------------- completeness
 
+
 def test_completeness_phcs_gap(ds):
     (s,) = completeness.detect(ds, "2025-12-14")
     assert s["ward"] == "PHC-S" and s["priority"] == "P2" and s["section"] == "data_quality"
@@ -190,8 +237,10 @@ def test_completeness_only_gap_in_replay(ds):
 def test_completeness_resolved_item_shows_this_weeks_cultures(ds):
     """Brief D5: the week after the gap PHC-S sent 48 cultures; the item says so instead of repeating 'no cultures'."""
     (s,) = completeness.detect(ds, "2025-12-21")
-    assert s["text"] == ("Health centre South: resolved, 48 cultures this week. Last flagged week ending 14 Dec 2025: "
-                         "0 cultures (usually 51 a week), cause unknown.")
+    assert s["text"] == (
+        "Health centre South: data gap. Resolved. Last flagged week ending 14 Dec 2025: 0 cultures (usually 51 a "
+        "week), cause unknown; now 48 cultures this week."
+    )
     week = ds.cultures[(ds.cultures.sample_date > "2025-12-14") & (ds.cultures.sample_date <= "2025-12-21")]
     assert (week.ward_code == "PHC-S").sum() == 48
 
@@ -203,13 +252,16 @@ def test_completeness_ok_line(ds):
 
 # ---------------------------------------------------------------- resistance change and ward outlier
 
+
 def test_resistance_change_demo_cells(ds):
     icu = [s for s in resistance_change.detect(ds, "2026-03-08") if s["ward"] == "ICU"]
     assert [(s["organism"], s["drug"]) for s in icu] == [("Staphylococcus aureus", "FOX")]
     assert icu[0]["slots"]["counts"] == [3, 8] and icu[0]["priority"] == "P2" and icu[0]["section"] == "changed"
     # A positive cefoxitin screen is MRSA (clinical D-L7), and 3 of 8 is too few for a percentage (brief D3)
-    assert icu[0]["text"] == ("Intensive care unit · MRSA (cefoxitin screen positive): 3 of 8 S. aureus in the last "
-                              "4 weeks vs 1 of 70 (1%) in the 52 weeks before. Changed; watch next week.")
+    assert icu[0]["text"] == (
+        "Intensive care unit · MRSA (cefoxitin screen positive): 3 of 8 S. aureus in the last 4 weeks vs 1 of 70 (1%) "
+        "in the 52 weeks before. Changed; watch next week."
+    )
     rows = ds.isolates[ds.isolates.isolate_id.isin(icu[0]["evidence"]["isolate_ids"])]
     assert len(rows) == 8 and (rows.FOX == "R").sum() == 3 and set(rows.ward_code) == {"ICU"}
     uro = {(s["ward"], s["drug"]) for s in resistance_change.detect(ds, "2025-06-08")}
@@ -245,8 +297,10 @@ def test_resistance_change_shows_no_percentage_below_ten(ds, as_of):
 def test_resistance_change_resolved_item(ds):
     """Brief D5: a cell flagged last week and not this week says so, with last week's and this week's counts."""
     (s,) = [s for s in resistance_change.detect(ds, "2026-03-08") if s["status"] == "resolved"]
-    assert s["text"] == ("Health centre South · Ceftriaxone resistant: resolved. Last flagged week ending 1 Mar 2026: "
-                         "3 of 9 K. pneumoniae; now 2 of 10 in the last 4 weeks.")
+    assert s["text"] == (
+        "Health centre South · Ceftriaxone resistant. Resolved. Last flagged week ending 1 Mar 2026: 3 of 9 K. "
+        "pneumoniae; now 2 of 10 in the last 4 weeks."
+    )
     assert len(s["evidence"]["isolate_ids"]) == 10
 
 
@@ -259,8 +313,11 @@ def test_outlier_needs_enough_isolates_per_cell(ds):
         icu = t[(t.ward == "ICU") & (t.p_mid < outlier.MIDP_ALPHA)]
         assert len(icu) == outlier.MIN_HIGH_CELLS and set(icu[icu.high].drug) == {"FOX", "CLI"}
         assert not any(s["ward"] == "ICU" for s in outlier.detect(ds, as_of))
-    uro_weeks = [a for a in ["2025-06-08", "2025-06-15", "2025-06-22", "2025-06-29"]
-                 if any(s["ward"] == "URO" for s in outlier.detect(ds, a))]
+    uro_weeks = [
+        a
+        for a in ["2025-06-08", "2025-06-15", "2025-06-22", "2025-06-29"]
+        if any(s["ward"] == "URO" for s in outlier.detect(ds, a))
+    ]
     assert uro_weeks and uro_weeks[0] == "2025-06-15"
 
 
@@ -268,10 +325,11 @@ def test_outlier_names_each_cell_and_lists_its_isolates(ds):
     """Brief D4 and D8: every high cell is named with its count, and the case file lists only those cells' isolates."""
     (s,) = outlier.detect(ds, "2025-06-15")
     assert s["ward"] == "URO" and s["priority"] == "P3" and s["section"] == "changed"
-    assert s["text"] == ("Urology: resistance above the usual range in 4 of 7 organism–drug pairs in the last 4 weeks. "
-                         "Resistant of tested: E. coli ceftriaxone 11 of 35; E. coli ciprofloxacin 12 of 35; E. coli "
-                         "cefuroxime 12 of 35; E. coli trimethoprim 13 of 35. Other units: 2 of 75 pairs. Unusual "
-                         "pattern across several results.")
+    assert s["text"] == (
+        "Urology: resistance above the usual range in 4 of 7 organism–drug pairs in the last 4 weeks. Resistant of "
+        "tested: E. coli ceftriaxone 11 of 35; E. coli ciprofloxacin 12 of 35; E. coli cefuroxime 12 of 35; E. coli "
+        "trimethoprim 13 of 35. Other units: 2 of 75 pairs. Unusual pattern across several results."
+    )
     cells = s["evidence"]["counts"]["cells"]
     assert all(c["tested"] >= outlier.MIN_TESTED or c["resistant"] >= outlier.MIN_RESISTANT for c in cells)
     rows = ds.isolates[ds.isolates.isolate_id.isin(s["evidence"]["isolate_ids"])]
@@ -282,7 +340,22 @@ def test_outlier_templates_cover_every_pair():
     assert len(resistance_change.PAIRS) <= MAX_OUTLIER_PAIRS
 
 
+def test_cefoxitin_reads_as_mrsa(ds):
+    """Clinical D-L7: a positive cefoxitin screen is MRSA, in the change item, its title and an outlier's cell name."""
+    assert resistance_change.finding("Staphylococcus aureus", "FOX") == "MRSA (cefoxitin screen positive)"
+    assert resistance_change.subject("Staphylococcus aureus", "FOX") == "MRSA among S. aureus"
+    assert resistance_change.subject("Escherichia coli", "TMP") == "E. coli resistant to trimethoprim"
+    cell = types.SimpleNamespace(organism="Staphylococcus aureus", drug="FOX")
+    assert outlier._pair(cell) == "MRSA (cefoxitin screen positive)"
+    (s,) = [s for s in resistance_change.detect(ds, "2026-03-08") if s["ward"] == "ICU"]
+    assert (
+        render.render(templates.TEMPLATES[s["template_id"]]["title"], s["slots"])
+        == "ICU: more MRSA among S. aureus than usual"
+    )
+
+
 # ---------------------------------------------------------------- shared properties of every B2 detector
+
 
 @pytest.mark.parametrize("as_of", DEMO_AS_OF + ["2025-12-14", "2025-12-21", "2026-06-28", "2026-07-05"])
 def test_text_numbers_come_from_slots(ds, as_of):
@@ -293,24 +366,22 @@ def test_text_numbers_come_from_slots(ds, as_of):
             for k in ("filter", "counts", "method"):
                 assert k in s["evidence"]
             assert FILTER_KEYS <= set(s["evidence"]["filter"]), s["kind"]  # re-runnable filter (CONTRACTS section 3)
+            check_title(registry.with_title(s))
     check_text(completeness.status_line(ds, as_of))
 
 
-def test_templates_have_no_literal_digits():
-    used = set(TREND_TEMPLATES) | {"completeness_gap", "completeness_ok"}
-    for tid in used:
-        literal = render._SLOT.sub("", templates.TEMPLATES[tid]["text"])
+def test_templates_have_no_literal_digits_and_worded_titles():
+    for tid in TREND_TEMPLATES:
+        literal = render.SLOT.sub("", templates.TEMPLATES[tid]["text"])
         assert not re.search(r"\d", literal), tid
+        check_title_template(tid)
 
 
-def test_trend_templates_never_redefine_base_ids():
-    src = (Path(templates.__file__)).read_text(encoding="utf-8")
-    base = None
-    for node in ast.walk(ast.parse(src)):
-        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "TEMPLATES" for t in node.targets):
-            base = {k.value for k in node.value.keys}
-    assert base and "policy_line" in base
-    assert not base & set(TREND_TEMPLATES)
+def test_template_modules_never_share_an_id():
+    """Each area keeps its own prefix, so merging the modules into templates.TEMPLATES never overwrites an id."""
+    parts = [templates_outbreak.TEMPLATES, TREND_TEMPLATES, templates_ui.TEMPLATES]
+    ids = [tid for part in parts for tid in part]
+    assert len(set(ids)) == len(ids) and len(templates.TEMPLATES) == len(ids) + len({"ed_cluster", "ed_case"})
     assert all(tid.startswith("trend_") for tid in TREND_TEMPLATES)
     for tid, t in TREND_TEMPLATES.items():
         assert templates.TEMPLATES[tid] is t
@@ -333,9 +404,19 @@ def test_detectors_speed(ds):
 
 # ---------------------------------------------------------------- registry
 
+
 def test_registry_lists_all_detectors():
-    assert registry.DETECTORS == ["phenotype", "thl", "stepup", "seen_before",
-                                  "resistance_change", "outlier", "policy", "expert_rules", "completeness"]
+    assert registry.DETECTORS == [
+        "phenotype",
+        "thl",
+        "stepup",
+        "seen_before",
+        "resistance_change",
+        "outlier",
+        "policy",
+        "expert_rules",
+        "completeness",
+    ]
     for name in ["resistance_change", "outlier", "policy", "expert_rules", "completeness"]:
         assert registry.load(name) is not None
 

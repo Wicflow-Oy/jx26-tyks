@@ -8,6 +8,7 @@ this module, and a test checks that.
 Jev is unreliable with counts, arithmetic and dates (the vendor's own limits page), so the state it gets holds only a
 few small engine-computed counts and labels: no dates, no patient ids.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -26,15 +27,20 @@ DEFAULT_BASE_URL = "https://api.typesafe.ai"
 LABEL = "Second opinion (Jev, experimental). Not used in prescribing alerts."
 QUESTION = "Forward to the ED?"
 QUESTION_ID = "forward_to_ed"
-QUESTIONS = {QUESTION_ID: {
-    "type": "noul",
-    "instructions": "Do these cases look like a related cluster that the emergency department should hear about "
-                    "this week?",
-    "criteria": {"true": "Several patients on one unit share a rare antibiogram within a short time",
-                 "false": "A single case, a common antibiogram, or a coincidental match"},
-}}
+QUESTIONS = {
+    QUESTION_ID: {
+        "type": "noul",
+        "instructions": (
+            "Do these cases look like a related cluster that the emergency department should hear about this week?"
+        ),
+        "criteria": {
+            "true": "Several patients on one unit share a rare antibiogram within a short time",
+            "false": "A single case, a common antibiogram, or a coincidental match",
+        },
+    }
+}
 SUPPORTED_KINDS = ("phenotype_cluster",)  # the only kind the simulated clusters calibrate
-YES_AT, NO_AT = 0.66, 0.34                # the vendor leaves middle values to human review
+YES_AT, NO_AT = 0.66, 0.34  # the vendor leaves middle values to human review
 
 # Fixed pass thresholds for `calibrate`. Both classes are required: on positives only, "always yes" would score 0.
 MAX_BRIER, MAX_ECE, MIN_N, MIN_PER_CLASS = 0.15, 0.05, 1000, 100
@@ -80,9 +86,12 @@ class JevHttpClient:
         self.timeout = timeout
 
     def noul(self, body: dict) -> float:
-        request = urllib.request.Request(self.url, data=json.dumps(body).encode("utf-8"), method="POST",
-                                         headers={"Authorization": f"Bearer {self._key}",
-                                                  "Content-Type": "application/json"})
+        request = urllib.request.Request(
+            self.url,
+            data=json.dumps(body).encode("utf-8"),
+            method="POST",
+            headers={"Authorization": f"Bearer {self._key}", "Content-Type": "application/json"},
+        )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             return float(json.load(response)["answers"][QUESTION_ID]["noul"])
 
@@ -93,13 +102,19 @@ def jev_state(signal: dict) -> dict:
     def count(name):
         return None if slots.get(name) is None else int(slots[name])
 
-    return {"finding": signal.get("kind"), "organism": signal.get("organism"), "unit": signal.get("ward"),
-            "priority": signal.get("priority"), "patients": count("n_patients"),
-            "patients_sharing_antibiogram": count("n_share")}
+    return {
+        "finding": signal.get("kind"),
+        "organism": signal.get("organism"),
+        "unit": signal.get("ward"),
+        "priority": signal.get("priority"),
+        "patients": count("n_patients"),
+        "patients_sharing_antibiogram": count("n_share"),
+    }
 
 
 class JevAdapter:
     """Replay first, then record: every answer is stored under .cache/jev and reused, so a demo replays offline."""
+
     name = "jev"
     model = JEV_MODEL
 
@@ -117,9 +132,15 @@ class JevAdapter:
         p = self._replay_or_ask(body)
         if p is None:
             return None
-        return {"provider": "jev", "mode": "noul", "question": QUESTION,
-                "answer": "yes" if p >= YES_AT else "no" if p <= NO_AT else "unclear", "score": p, "label": LABEL,
-                "calibration": {k: report.get(k) for k in ("brier", "ece", "n", "passed")} if report else None}
+        return {
+            "provider": "jev",
+            "mode": "noul",
+            "question": QUESTION,
+            "answer": "yes" if p >= YES_AT else "no" if p <= NO_AT else "unclear",
+            "score": p,
+            "label": LABEL,
+            "calibration": {k: report.get(k) for k in ("brier", "ece", "n", "passed")} if report else None,
+        }
 
     def _replay_or_ask(self, body: dict) -> float | None:
         key = hashlib.sha256(json.dumps(body, sort_keys=True).encode("utf-8")).hexdigest()
@@ -154,11 +175,23 @@ def calibrate(provider: SecondOpinion, clusters) -> dict:
     n, n_pos = len(y), sum(y)
     brier = sum((pi - yi) ** 2 for yi, pi in zip(y, p)) / n if n else None
     ece = expected_calibration_error(y, p)
-    passed = (n >= MIN_N and min(n_pos, n - n_pos) >= MIN_PER_CLASS
-              and brier is not None and brier <= MAX_BRIER and ece is not None and ece <= MAX_ECE)
-    report = {"model": getattr(provider, "model", None), "brier": brier, "ece": ece, "n": n, "n_positive": n_pos,
-              "passed": passed, "thresholds": {"max_brier": MAX_BRIER, "max_ece": MAX_ECE, "min_n": MIN_N,
-                                               "min_per_class": MIN_PER_CLASS}}
+    passed = (
+        n >= MIN_N
+        and min(n_pos, n - n_pos) >= MIN_PER_CLASS
+        and brier is not None
+        and brier <= MAX_BRIER
+        and ece is not None
+        and ece <= MAX_ECE
+    )
+    report = {
+        "model": getattr(provider, "model", None),
+        "brier": brier,
+        "ece": ece,
+        "n": n,
+        "n_positive": n_pos,
+        "passed": passed,
+        "thresholds": {"max_brier": MAX_BRIER, "max_ece": MAX_ECE, "min_n": MIN_N, "min_per_class": MIN_PER_CLASS},
+    }
     calibration_file().parent.mkdir(parents=True, exist_ok=True)
     calibration_file().write_text(json.dumps(report, indent=1), encoding="utf-8")
     return report

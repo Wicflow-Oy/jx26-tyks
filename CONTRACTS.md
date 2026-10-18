@@ -1,7 +1,7 @@
 # Build contracts (v1, Sat 17 Oct 2026 evening)
 
 Product name: `aei.config.APP_NAME` (placeholder "Strainwatch"; the team decides). Never hard-code the name elsewhere.
-All data is synthetic. Python 3.12, pandas 3.0, FastAPI. Run everything with `.venv/Scripts/python.exe`.
+All data is synthetic. Python 3.12, pandas 3.0, FastAPI. Run everything with the project venv (`.venv/bin/python`; on Windows `.venv/Scripts/python.exe`). One formatter and linter: `ruff format` and `ruff check` (settings in `pyproject.toml`, line length 120).
 
 **Ground rules for every workstream**
 - Only edit the files your workstream owns (section 8). Shared files (`config.py`, `data.py`, `stats.py`, `render.py`, `signal.py`, `templates.py`, `CONTRACTS.md`, `tests/conftest.py`) are read-only; ask the integrator for a change, or note it in your report.
@@ -82,7 +82,7 @@ Every detector returns `list[dict]` built with `signal.make_signal(...)`:
 
 **Goldens** (product default, README counting rule):
 - ICU blood+wound, as-of 2026-03-29, 4w, k=20 stabilised, n = 24:
-  - MEM 72 [59–84], TZP 73 [60–84], VAN 78 [61–90]. 36b printed MEM 74 [61–85]; it counted ampicillin-S E. faecalis as covered by meropenem, which has no enterococcal EUCAST breakpoint;
+  - MEM 72 [58–83], TZP 72 [59–83], VAN 78 [61–90] (the stabilised Beta has a Jeffreys half on each side, so no organism's share collapses to a point). 36b printed MEM 74 [61–85]; it counted ampicillin-S E. faecalis as covered by meropenem, which has no enterococcal EUCAST breakpoint;
   - observed MEM 11/24, TZP 11/24, VAN 20/24; 12m MEM 149/184.
 - URO urine, as-of 2025-06-29, 4w (state `ok`, so observed), n = 69:
   - CRO 42/67 = 63 [51–74], NIT 63/69 = 91 [83–96]; CIP not shown (untested on 16% of isolates);
@@ -101,7 +101,6 @@ Every detector returns `list[dict]` built with `signal.make_signal(...)`:
   "small_n_examples": [...optional...],
   "footer": "In-vitro coverage on this unit. Not a prescription; local guide first." }
 ```
-- `views.antibiogram(ds, as_of, ward, specimen_group, window, rule)` gives the per-organism % susceptible (R of n, interval, state) for the "organism" tab.
 - `views.filters_catalog(ds)` lists the wards (code + label), specimen groups, organisms, sexes, age bands and settings.
 - `views.trend(ds, ward, specimen_group, drug, as_of, weeks=52, window="4w", organism=None, rule=...)` gives a weekly series of the rolling-window cell (observed + estimate) for sparklines. It must take ≤1 s.
 - **Performance:** `my_ward` ≤ 1.5 s cold on this laptop.
@@ -119,8 +118,9 @@ Each detector is `detect(ds, as_of, rule="readme_period") -> list[signal]` and i
 | `stepup.py` | Count step-up Bayesian test (`47_outbreak_prob`). It is supporting evidence attached to a cluster or a P3 item, never a P1 on its own | unusual_patterns, P3 |
 | `outlier.py` | Ward outlier count vs other wards (`44`/`48`) | changed, P3 |
 | `resistance_change.py` | Organism × drug resistance on a ward, last 4 weeks vs the prior 52 weeks, via `stats.change_test` (`39_resistance_hybrid` pairs, `first_30d` there; use `rule`) | changed, P2 |
-| `policy.py` | `config.POLICY_LINES`: rolling 52-week rate under the line's counting rule; fires while ≥ threshold. Exposes `policy_states(ds, as_of) -> list[dict]` with rate, x, n, interval, the prior-year rate, `crossed_on` (first week-end ≥ threshold in the current run), the threshold and `local_guide_alternative` | policy, P2 |
+| `policy.py` | `config.POLICY_LINES`: rolling 52-week rate under the line's counting rule; fires while ≥ threshold. Exposes `policy_states(ds, as_of) -> list[dict]` with rate, x, n, interval, the prior-year rate, `crossed_on` (first week-end ≥ threshold in the current run) and the threshold. A line names its own drug only, never another one (18 Oct decision) | policy, P2 |
 | `seen_before.py` | For each active cluster: earlier patients with the same profile, same ward vs elsewhere, with the profile's background share (`52`). Shows "not seen on ICU before" | seen_before, info |
+| `explanations.py` | Not a detector: the competing explanations H1-H6 a cluster card carries in `evidence.competing_explanations` (`19`, `41`). Each hypothesis: `{id, label, rating, rating_label, evidence, template_id, slots}`; `rating` is a code (strong, moderate, weak, plausible, possible, unlikely, check, "contributes (index imported?)"), `label`, `rating_label` and `evidence` are text in the requested language; counts are x of n, never a percentage | - |
 | `expert_rules.py` | `config.EXPERT_RULES` hits in the window (`40`, `52`) | data_quality, P3 |
 | `completeness.py` | Silent units, meaning no cultures this week vs expected (`35_data_gaps`) | data_quality, P2 |
 
@@ -194,58 +194,46 @@ Each detector is `detect(ds, as_of, rule="readme_period") -> list[signal]` and i
   - `JevAdapter` (env `JEV_API_KEY`, `JEV_BASE_URL`) with record/replay, which returns `None` unless the key is set **and** `.cache/jev_calibration.json` exists with `passed: true`;
   - `calibrate(provider, clusters) -> report` (Brier score, ECE and n over the 1,350 simulated spike-in clusters, with fixed pass thresholds).
 
-  Output: `{"provider": "jev", "mode": "choice"|"score"|"noul", "question": "Forward to the ED?", "answer", "score", "label": "Second opinion (Jev, experimental). Not used in prescribing alerts.", "calibration": {...}}`. It is used **only** on infection-control inbox items. It is never imported by `cds.py`; a test enforces this. Read `context/tyks-brainstorm-research.md` and the dossier on Jev (TypeSafe AI, jev-1.13.0, Choice/Score/Noul). If the HTTP shape is unknown, implement a clearly-marked `JevHttpClient` guess behind the adapter, plus the fake used in tests.
+  Output: `{"provider": "jev", "mode": "choice"|"score"|"noul", "question": "Forward to the ED?", "answer", "score", "label": "Second opinion (Jev, experimental). Not used in prescribing alerts.", "calibration": {...}}`. It is used **only** on infection-control inbox items. It is never imported by `cds.py` or `cds_hooks.py`; a test enforces this. Read `context/tyks-brainstorm-research.md` and the dossier on Jev (TypeSafe AI, jev-1.13.0, Choice/Score/Noul). If the HTTP shape is unknown, implement a clearly-marked `JevHttpClient` guess behind the adapter, plus the fake used in tests.
 
-## 7. API, alerts, order check (`aei/api.py`, `aei/store.py`, `aei/cds.py`, `aei/precompute.py`; workstream D)
+## 7. API, alerts, order check (`aei/api.py`, `aei/store.py`, `aei/cds.py`, `aei/cds_hooks.py`, `aei/precompute.py`; workstream D)
 FastAPI app `aei.api:app`; run with `uvicorn aei.api:app --host 127.0.0.1 --port 8765`. Bind to localhost by default. The app serves `web/` statically at `/` (the UI arrives in Phase 3; ship a placeholder `web/index.html` that lists the endpoints).
 
 | Method & path | Returns |
 |---|---|
-| `GET /api/meta` | app_name, synthetic, data_start/end, replay range (first/last as_of), demo_mondays, wards, roles, narrator provider name, `second_opinion: "configured"/"not_configured"` |
+| `GET /api/meta` | app_name, synthetic, data_start/end, replay range (first/last as_of), demo_mondays, `tour_start_as_of`, wards, roles, `indications` [{key, label, specimen}], `cds_hooks` {discovery, note: simulated, no EHR connected}, narrator provider name, `second_opinion: "configured"/"not_configured"` |
 | `GET /api/filters` | `views.filters_catalog` |
-| `GET /api/brief?as_of=&window=4w&rule=` | `brief.build_brief`, with each item enriched by `alert` (approved alert linked to it, if any) and `heads_up` state |
+| `GET /api/brief?as_of=&window=4w&rule=` | `brief.build_brief`, with each item enriched by `alert` (approved alert linked to it, if any) and `heads_up` state, plus `policy_states` (every policy line's state, crossed or not) |
 | `GET /api/my-ward?as_of=&ward=&specimen=&organism=&sex=&age_band=&setting=&rule=` | `views.my_ward` + `banners` (active approved alerts and policy states touching that unit) + `signals` (`brief.signals_for`) |
 | `GET /api/trend?...` | `views.trend` |
 | `GET /api/replay/weeks` | `[{as_of, monday, n_p1, n_signals}]` for slider tick marks (precomputed) |
 | `GET /api/feed?as_of=` | the "continuously updated" ticker: isolates and results arriving in the week ending as_of, by unit (counts only), "refreshed nightly" |
 | `GET /api/signals/{id}?as_of=` | case file: the signal, a line list (synthetic isolate id, date, ward, care day, profile; no names), an epi curve by day, seen-before matches, step-up evidence, and alerts |
-| `POST /api/alerts` | approve an alert from a signal: `{signal_id, as_of, wards[], drugs[], message, approved_by_role, expires_on}`; `expires_on` defaults to monday + `ALERT_DEFAULT_EXPIRY_DAYS` |
-| `GET /api/alerts?as_of=` | alerts active at as_of+1 |
+| `POST /api/alerts` | approve an alert from a signal: `{signal_id, as_of, wards[], drugs[], indications[], message, approved_by_role, expires_on}`; `indications` empty = every indication; `expires_on` defaults to monday + `ALERT_DEFAULT_EXPIRY_DAYS`. The alert keeps the signal's `profile` (flagged antibiogram), `marker` and `resistant_to` |
+| `GET /api/alerts?as_of=&include_expired=` | alerts active at as_of+1; with `include_expired=1`, every alert approved by then. Each row has `expired` and `revoked_on` as known that Monday (case timeline "Approved 9 Mar · expired 23 Mar") |
 | `POST /api/alerts/{id}/revoke` | revoke an alert |
-| `POST /api/heads-up` | draft a heads-up from a signal: text by the narrator for audience "ed", status `draft` |
+| `POST /api/heads-up` | draft a heads-up from a signal: text by the narrator for audience "ed" from `templates.ed_heads_up` (slots only; drug names, never panel codes), status `draft` |
 | `POST /api/heads-up/{id}/approve` | marks it `approved`. **Nothing is ever sent**; the response says `"delivery": "not sent (demo)"` |
 | `GET /api/feedback?as_of=` | infection-control view of order-card outcomes (counts by card/outcome, no user ids) |
 | `POST /api/narrate`, `POST /api/validate` | for the UI and tests |
 | `GET /api/second-opinion/{signal_id}` | Jev or `{"status": "not_configured"}` |
-| `GET /cds-services` | CDS Hooks discovery: `{services: [{hook: "order-select", id: "strainwatch-order-select", title, description, prefetch: {}}, {hook: "order-sign", id: "strainwatch-order-sign", ...}]}` |
+| `GET /cds-services?lang=` | CDS Hooks discovery: `{services: [{hook: "order-select", id: "strainwatch-order-select", title, description, prefetch: {}}, {hook: "order-sign", id: "strainwatch-order-sign", ...}]}` |
 | `POST /cds-services/{id}` | CDS Hooks request (see below), returning `{cards: [...]}` |
 | `POST /cds-services/{id}/feedback` | CDS Hooks feedback, logged to the store |
 
-**Order check (`cds.order_check(ds, as_of, unit, drug, indication, alerts, policy_states) -> list[card]`; pure, deterministic):**
+**Order check (`cds_hooks.order_check(ds, as_of, unit, drug, indication, alerts, policy_states) -> list[card]`; pure, deterministic; the CDS Hooks adapter over `cds.order_context`):**
 
 *Request.* The request is CDS Hooks 2.0 shaped: `{hookInstance, hook, context: {userId, patientId, encounterId, draftOrders: FHIR Bundle with a MedicationRequest}}`.
 - The drug comes from the MedicationRequest `medicationCodeableConcept.coding` ATC code, mapped through `config.ATC`.
 - The demo carries unit and indication in `context.extension`: `{"strainwatch.unit": "ED", "strainwatch.indication": "urinary", "strainwatch.as_of": "2026-06-21"}`.
 
-*Which cards are allowed.* Card sources are deterministic only: (a) an approved, unexpired alert for that unit; (b) a policy line currently ≥ threshold whose `order_units` include the unit and whose `order_indication` matches. **Never** narrator or Jev output, and never a patient-specific estimate.
+*Which cards are allowed.* The same rules as section 7b: a card only for an `info` or `warning` order context. Sources are deterministic only (approved alerts, the patient's own acquired R, policy and local lines); **never** narrator or Jev output, and never a patient-specific estimate. order-select returns at most info; order-sign may warn.
 
-*When it interrupts.*
-- `indicator: "warning"` (interruptive) **only** when the ordered drug is the drug that alert or policy line concerns.
-- Otherwise there is at most one `indicator: "info"` passive card per active alert on that unit.
-- No card when nothing applies.
+*Card content.* `summary` (≤140 characters, e.g. "Possible ESBL E. coli cluster on URO: the flagged antibiogram is R to ceftriaxone"); `detail` (markdown): the patient's previous results first, then "What is happening" (headline + the alert message with who flagged it and when, or the line and when it was crossed), "This drug in this population" (R of n, 4 weeks vs 52 weeks, intervals), "Consider whether this drug still fits. The decision is yours.", the lag note and the small print "Observed unit-level information, not a prediction for this patient. The doctor decides."; `source: {label: APP_NAME + " · infection control"}`; `overrideReasons` (keep + `config.KEEP_REASONS`); `links: [{label: "All drugs on My ward", url: <My ward for unit/specimen/organism>, type: "absolute"}]`; `extension: {"strainwatch.rule", "strainwatch.source", "strainwatch.evidence"}`. **No `suggestions` and no `selectionBehavior`: the card never names another drug** (product decision, 18 Oct, after Mylab's feedback: the doctor makes an informed choice).
 
-*Card content.*
-- `summary` (≤140 characters), e.g. "Trimethoprim: 20.4% resistant (160 of 786, last 52 weeks), above local 20% line".
-- `detail` (markdown): the 12-month-ago comparison, who flagged it and when (policy: "Local policy line set by infection control; crossed week ending 21 Jun 2026"; alert: "Flagged by infection control, 9 Mar 2026; expires 23 Mar"), the local-guide alternative, and the small print "Observed unit-level information, not a prediction for this patient. The doctor decides."
-- `source: {label: APP_NAME + " · infection control"}`.
-- `suggestions: [{label: "Change to pivmecillinam", uuid, actions: [{type: "update", description, resource: <MedicationRequest with the ATC code swapped>}]}]`.
-- `overrideReasons: [{code: "keep", display: "Keep trimethoprim"}, ...]`.
-- `links: [{label: "Details", url: "/#/signal/<id>?as_of=", type: "absolute"}]`. A SMART app launch is not part of the demo.
-- `selectionBehavior: "at-most-one"`, `uuid`, plus our own `extension: {"strainwatch.rule": "...", "strainwatch.evidence": {...counts, filter...}}`.
+*Feedback.* Keep maps to CDS Hooks `outcome: overridden` + `overrideReason`. The feedback is stored with card uuid, source id, outcome and timestamp; no user or patient id is stored.
 
-*Feedback.* Keep / Change / Details map to CDS Hooks feedback `outcome: overridden | accepted` (+ `overrideReason`, `acceptedSuggestions`). The feedback is stored with card uuid, source id, outcome and timestamp; no user or patient id is stored.
-
-**Store (`store.py`):** SQLite in `.cache/state.sqlite`, with tables alerts, heads_up, feedback and audit (append-only). `store.reset()` clears it for tests and the demo. `store.seed_demo()` adds `config.DEMO_ALERT_SEEDS` (section 7b), marked `seed: true`. The trimethoprim card needs **no** seed: it comes from the policy line.
+**Store (`store.py`):** SQLite in `.cache/state.sqlite`, with tables alerts, heads_up, feedback and audit (append-only). `store.reset()` clears it for tests and the demo. `store.seed_demo()` adds `config.DEMO_ALERT_SEEDS` (section 7b), marked `seed: true`. Alert rows carry `wards, drugs, indications, resistant_to, profile, marker, organism, specimen, message, approved_on, expires_on, revoked_on`. The trimethoprim card needs **no** seed: it comes from the policy line.
 
 **Precompute (`precompute.py`):** the CLI `python -m aei.precompute [--weeks all|demo]` warms the caches (signals per week, replay weeks, the demo-Monday briefs) and prints timings.
 
@@ -259,12 +247,12 @@ FastAPI app `aei.api:app`; run with `uvicorn aei.api:app --host 127.0.0.1 --port
 ## 8. File ownership
 | Workstream | Owns (create/edit only these) |
 |---|---|
-| Integrator (main session) | `aei/config.py`, `aei/data.py`, `aei/stats.py`, `aei/render.py`, `aei/signal.py`, `CONTRACTS.md`, `tests/conftest.py`, `tests/test_data.py`, README.md, git |
+| Integrator (main session) | `aei/config.py`, `aei/data.py`, `aei/stats.py`, `aei/render.py`, `aei/signal.py`, `aei/phenotype_rules.py`, `aei/i18n.py`, `aei/templates.py`, `aei/templates_fi.py`, `CONTRACTS.md`, `pyproject.toml`, `tests/conftest.py`, `tests/test_data.py`, `tests/test_render.py`, `tests/test_i18n.py`, README.md, git |
 | **A Coverage & views** | `aei/coverage.py`, `aei/views.py`, `aei/aggregates.py`, `tests/test_stats.py`, `tests/test_coverage.py`, `tests/test_views.py` |
-| **B1 Outbreak detectors** | `aei/detectors/phenotype.py`, `thl.py`, `stepup.py`, `seen_before.py`, `aei/templates_outbreak.py` (a `TEMPLATES` dict merged into `aei.templates`), `tests/test_outbreak_detectors.py` |
+| **B1 Outbreak detectors** | `aei/detectors/phenotype.py`, `thl.py`, `stepup.py`, `seen_before.py`, `explanations.py`, `aei/templates_outbreak.py` (a `TEMPLATES` dict merged into `aei.templates`), `tests/test_outbreak_detectors.py` |
 | **B2 Trend detectors & brief** | `aei/detectors/policy.py`, `resistance_change.py`, `outlier.py`, `expert_rules.py`, `completeness.py`, `aei/detectors/__init__.py` (the registry: `DETECTORS` = module names; import lazily, skip a missing module with a warning), `aei/brief.py`, `aei/templates_trends.py`, `tests/test_trend_detectors.py`, `tests/test_brief.py` |
 | **C Narrator, validator, Jev** | `aei/narrator/*.py`, `aei/validator.py`, `aei/jev.py`, `tests/test_validator.py`, `tests/test_narrator.py`, `tests/test_jev.py` |
-| **D API, store, CDS, precompute** | `aei/api.py`, `aei/store.py`, `aei/cds.py`, `aei/precompute.py`, `web/index.html` (placeholder), `tests/test_api.py`, `tests/test_cds.py`, `tests/test_store.py` |
+| **D API, store, CDS, precompute** | `aei/api.py`, `aei/store.py`, `aei/cds.py`, `aei/cds_hooks.py`, `aei/templates_ui.py`, `aei/precompute.py`, `web/index.html` (placeholder), `tests/test_api.py`, `tests/test_cds.py`, `tests/test_store.py` |
 
 While other workstreams are unfinished, test against their contract with fakes or monkeypatching (D especially). The integrator wires everything together and runs the full suite. In your final report, list: files written, tests (pass/fail counts), anything mocked, any contract deviation, and open questions.
 
@@ -275,65 +263,51 @@ While other workstreams are unfinished, test against their contract with fakes o
 
 The analysis used pickles from `common_build.py`; `aei.data.load()` produces the same table, with the extra columns `care_day_no` and `age_band`. Port the logic; don't import from the analysis folder.
 
-## 7b. Doctor's view: order context (v2, supersedes the interrupt rule in section 7)
-This is a mocked order form with these inputs:
-- a synthetic patient (`patient_id`; sex, age and home area come from the data);
-- the unit;
-- the indication (`config.INDICATIONS`: uti / bloodstream / wound, each mapped to a specimen);
-- the drug (`config.ORDER_DRUGS`).
+## 7b. Doctor's view: order context (v3, Sun 18 Oct: the layer never recommends a drug)
+A mocked order form: a synthetic patient (`patient_id`; sex, age and home area from the data), the unit, the indication (`config.INDICATIONS`: uti / bloodstream / wound, each mapped to a specimen) and the drug (`GET /api/order-drugs?indication=`: the `config.ORDER_DRUGS` with a reported result on that specimen). The layer updates live as the drug changes. Owner: **D** (`aei/cds.py`, pure and deterministic).
 
-The card updates live as the drug changes. Owner: **D** (`aei/cds.py`, pure and deterministic).
+**Decision (18 Oct, after Mylab's feedback):** the layer flags the drug the doctor entered and **never names another one**: no local-guide alternatives, no "Change to X", no suggestions. It says what is going on, this drug's numbers in this population, and one neutral sentence. The doctor keeps the order (with a reason), edits it, or opens My ward to look at every drug.
 
 **The function:** `cds.order_context(ds, as_of, patient_id, unit, indication, drug, stage="select"|"sign", alerts, policy_states) -> dict`
 ```
-{ "state": "quiet" | "no_data" | "info" | "warning",
-  "chip": "No active alerts · URO · data to 21 Jun",            # quiet; no_data reads "Not enough data on URO for ceftriaxone (n = 4, 12 months)"
-  "lines": [ {"key": "happening", "text", "source": {"kind": "alert"|"policy"|"own_history", "id", "flagged_by", "flagged_on"}},
-             {"key": "your_drug", "text", "numbers": {r, n, pct, ci, window, r12, n12, pct12, state}},
-             {"key": "alternatives", "label": "Alternatives from the local guide (example, to be set by Tyks)",
-              "items": [{"drug", "name", "r", "n", "pct", "ci", "state"}]} ],          # at most 3 lines
-  "previous_results": [ {"date", "unit", "specimen", "organism", "flags": ["ESBL"], "drug_result": "R", "reason": <phenotype_rules.REASONS code, shown as REASON_TEXT>} ],  # shown FIRST when present
-  "actions": {"keep_reasons": config.KEEP_REASONS, "change_to": [drug codes from the guide], "details_link": "/#/ward?ward=URO&specimen=urine&organism=Escherichia%20coli&as_of=..."},
-  "interruptive": bool, "evidence": {...filters and counts...}, "rule": "<plain sentence of which rule fired>" }
+{ "state": "quiet" | "no_data" | "notice" | "info" | "warning",  "stage", "interruptive": bool,
+  "chip": "No active alerts · URO · data to 21 Jun",       # one line in every state; for info/warning the short summary
+  "headline": "Possible ESBL E. coli cluster on Urology. The flagged antibiogram is R to ceftriaxone.",  # info/warning, else null
+  "ask": "Consider whether this drug still fits. The decision is yours.",   # info/warning, else null; at select + " It will ask again when the order is signed."
+  "rule": "<plain sentence of which rule fired>",
+  "previous_results": [ {"date", "unit", "specimen", "organism", "flags": ["ESBL"], "drug_result": "R", "reason", "reported_result", "reason_text"} ],  # shown FIRST; reported_result is the laboratory's own S/R when a species rule counts it differently (C. freundii cefuroxime S -> R), else null
+  "notes": ["Trimethoprim: EUCAST lists P. aeruginosa as intrinsically resistant (this patient's wound isolate of 31 Dec 2025)."],
+  "lines": [ {"key": "happening", "text", "source": {"kind": "alert"|"own_history"|"policy"|"local_line", "id", "flagged_by", "flagged_on"}},  # info/warning
+             {"key": "your_drug", "text", "numbers": {r, n, pct, ci, state, window, r12, n12, pct12, ci12, state12} | null, "not_shown"} ],  # not for a notice; pct/ci (pct12/ci12) are null when state (state12) is not_enough_data
+  "actions": {"keep": {"label": "Keep ceftriaxone", "reasons": config.KEEP_REASONS}, "edit": {"label": "Edit the order"},
+              "details": {"label": "All drugs on My ward", "link": "/#/ward?ward=URO&specimen=urine&organism=Escherichia%20coli&as_of=..."}},
+  "source": {kind, id, signal_id} | null, "card_key", "evidence": {population, counts, not_shown, reasons, method}, "note", "small_print" }
 ```
 
 **The rules (deterministic; never model output; never a patient-level probability):**
-- **The population** is the unit's own isolates for the indication's specimen. For `COMMUNITY_UNITS` (ED, PHC-N, PHC-S), use isolates from those units whose patients live in the patient's home area. For uti, also match the patient's sex (`sex_matched`). With a `reference_organism` (uti: E. coli), count that organism's R of n. Otherwise count coverage over the organism mix (not-covered of tested). Windows are 4w and 12m. Small n: `stats.n_state`.
-- **Effective results** (shared with My ward): `phenotype_rules.effective(isolates, drug) -> (result, reason)`, result S/R/None per isolate. First match wins; rules that EUCAST states as "report R" come before the reported result, inferences for an untested pair after it:
-  - `no_breakpoint` (`config.NO_BREAKPOINT`, EUCAST v16.1 dash or no breakpoint for the species; includes enterococcal meropenem and C. freundii cefuroxime, Expert Rules v3.3 rule 5) and `intrinsic` (`config.INTRINSIC`, Expected Resistant Phenotypes v1.2 pairs only): R;
-  - `inferred_mrsa`: S. aureus with a positive cefoxitin screen is R to every beta-lactam on the panel (EUCAST Staphylococcus rule 1; ceftaroline and ceftobiprole excepted, not on the panel);
-  - `reported`: the laboratory's S or R;
-  - `inferred_mssa`: a negative screen makes CXM, CRO, TZP and MEM S; S. aureus ampicillin stays untested (penicillinase);
-  - `inferred_ampicillin`: E. faecalis TZP follows ampicillin;
-  - `local_esbl_rule`: an untested CXM or CRO on an ESBL producer is R. This laboratory's reporting rule (0 of 517 ESBL isolates reported S); EUCAST reports cephalosporins as tested. Never applied to ceftazidime;
-  - `untested`: excluded from every count.
-
-  The only reported results the rules overrule are 517 C. freundii cefuroxime S. Methods note: C. freundii is an AmpC species, so 3rd-generation cephalosporin and TZP S results carry a selection risk (Expert Rules v3.3 rule 3).
-- **Warning** (interruptive) **only at `stage="sign"`**, and only if either:
-  - (a) an approved, unexpired alert at `as_of + 1` covers this unit **and** this drug (`alert.wards`, `alert.drugs`); or
-  - (b) this patient's own isolate in the 12 months to `as_of` has an acquired R to this drug (reason `reported`, `inferred_mrsa` or `local_esbl_rule`). An `intrinsic` or `no_breakpoint` R is a property of the species: a passive note naming the organism, never a warning.
-
-  At `stage="select"` the same case shows as `info`, with a note that it will ask at sign.
-- **Info** (passive banner): an alert on this unit that doesn't cover the drug; or the population's observed resistance is ≥ (line − `INFO_MARGIN`), where the line is `EMPIRICAL_LINES[indication][drug]`, else `_default`; or an active `policy_states` line matching the unit's population and drug.
-- **no_data**: the population has n < 10 in 12 months for this drug, and nothing else applies. It must look different from quiet.
-- **Quiet** otherwise. Never an alert on every order.
-- **Never** "AI recommends", never a block, and never patient-level probabilities. `cds.py` imports neither the narrator nor Jev.
+- **Population:** the unit's own isolates for the indication's specimen; for `COMMUNITY_UNITS` (ED, PHC-N, PHC-S) those units' isolates from patients in the patient's home area; uti also matches sex; with a `reference_organism` (uti: E. coli) R of n of that organism, else not-covered of tested over the organism mix. Windows 4w and 12m (52 weeks). Small n: `stats.n_state`. Effective results come from `phenotype_rules.effective` (shared with My ward): `no_breakpoint`, `intrinsic`, `inferred_mrsa`, `reported`, `inferred_mssa`, `inferred_ampicillin`, `local_esbl_rule`, `untested` (first match wins; the only reported results overruled are 517 C. freundii cefuroxime S). No number for a urine-only drug outside urine, a drug the reference organism is intrinsically R to, or a drug with a result on fewer than 90% of the population's isolates.
+- **Warning** (interruptive) **only at `stage="sign"`**, and only if (a) an approved alert active at `as_of + 1` lists this unit (`wards`), this drug (`drugs`) and this indication (`indications`; empty = all); or (b) this patient's own isolate in the 52 weeks to `as_of` has an acquired R to this drug (reason `reported`, `inferred_mrsa` or `local_esbl_rule`). An `intrinsic` or `no_breakpoint` R is a property of the species: a passive note, never a warning. At `stage="select"` the same case is `info`, and `ask` adds "It will ask again when the order is signed."
+- **Info** (passive): a policy line at or above its threshold whose population and `order_units` match the order; or, where infection control set a line for this indication and drug (`config.EMPIRICAL_LINES`: only urinary trimethoprim, 20%), the population's 52-week resistance on 30 or more isolates is at or above it or within `INFO_MARGIN` (3 points) below. No default line for any other drug.
+- **Notice:** an active alert on the unit that does not apply to this drug or indication: a one-line chip ("Possible MRSA cluster on ICU. The alert does not apply to vancomycin."), no numbers, no card.
+- **no_data:** no number for this drug in this population (fewer than 10 isolates with a result in 52 weeks, or a reason above), and nothing else applies. It looks different from quiet.
+- **Quiet** otherwise. Across the 5 scenario patients x 3 indications x 13 order drugs at select: 51 quiet, 49 no data, 50 notices, 45 info, 0 warnings (`tests/test_cds.py`).
+- **Headline from data only:** an alert's title comes from its own fields ("Possible {marker} {organism} cluster" when it carries a shared antibiogram, "{marker} {organism} alert" otherwise), then "The flagged antibiogram is R to X" (with how it was read when not reported, e.g. "inferred: MRSA, cefoxitin screen positive") or "The alert applies to X". "Applies to" is an alert's scope; "covered" is only drug against organism.
+- **Never** "AI recommends", never a block, never a named alternative and never a patient-level probability. `cds.py` and `cds_hooks.py` import neither the narrator nor Jev.
 
 **Logging and feedback:**
-- `POST /api/order-feedback {session, card_key, source_id, state, outcome: shown|keep|change|details, reason?, changed_to?}`. Every displayed info/warning logs a `shown` event once per order draft.
-- `GET /api/order-feedback/summary?as_of=` returns, per source, "shown 14 times, changed 6". This is an infection-control view; no user or patient id is stored.
+- `POST /api/order-feedback {session, card_key, source_id, state, outcome: shown|keep|edit|change|details, reason?, changed_to?}` (`edit`: back to the order; `change`: the doctor then picked another drug). Every displayed info/warning logs a `shown` event once per order draft.
+- `GET /api/order-feedback/summary?as_of=` returns per source shown, edited, changed, kept, details and keep reasons ("shown 14 times, changed 6"). This is an infection-control view; no user or patient id is stored.
 
 **Endpoints:**
 - `POST /api/order-context` (body: the inputs above) → `order_context`.
+- `GET /api/order-drugs?indication=` → `[{drug, name, atc, aware}]`.
 - `GET /api/patients/{id}/history?as_of=` gives the previous results (12 months).
-- `GET /api/demo/scenarios` gives `config.DEMO_SCENARIOS`, each with the computed state, for the scenario picker.
-- **The CDS Hooks endpoints stay as the integration story:** order-select returns at most info cards, and order-sign may return a warning card under the same rules.
+- `GET /api/demo/scenarios` gives `config.DEMO_SCENARIOS`, each with the computed state at sign, for the scenario picker.
+- **CDS Hooks endpoints stay the standards-based integration route** for an EHR that supports CDS Hooks 2.0: order-select returns at most info cards, order-sign may warn, under the same rules. Simulated in this prototype; no EHR is connected.
 
-- **Alternatives** come from `config.local_guide_example(indication, sex)` (uti: women's cystitis list, or the men's list; "example, to be set by Tyks"). A drug is never offered when an active alert on the unit lists it in `resistant_to`, or when it would itself warn. When nothing is left, say `config.NO_GUIDE_ALTERNATIVE`.
+**Demo scenarios:** `config.DEMO_SCENARIOS`, expected states quiet / info / warning; `tests/test_cds.py` asserts all five. The uro-esbl patient is a woman (P001948), like 10 of the 11 clone patients.
 
-**Demo scenarios:** `config.DEMO_SCENARIOS`, with the expected states quiet / info / warning. `tests/test_cds.py` must assert all five. The uro-esbl patient is a woman (P001948), like 10 of the 11 clone patients.
-
-**Seeds:** `store.seed_demo()` inserts `config.DEMO_ALERT_SEEDS`. Each carries `resistant_to`: the flagged antibiogram's reported R plus what its marker implies. Its `drugs` (what warns) are exactly those. URO ESBL, approved 9 Jun 2025: AMP, CXM, CRO, CIP, TMP. ICU MRSA, approved 9 Mar 2026: every beta-lactam plus CLI. Seeds are visible to every session; their messages are checked against the raw data (`tests/test_against_source.py`).
+**Seeds:** `store.seed_demo()` inserts `config.DEMO_ALERT_SEEDS`. Each carries `profile` (the flagged antibiogram), `marker`, `resistant_to` (its reported R plus what the marker implies) and `drugs` = exactly those, and `indications`. URO ESBL, approved 9 Jun 2025: AMP, CXM, CRO, CIP, TMP; uti and bloodstream (urosepsis). ICU MRSA, approved 9 Mar 2026: every beta-lactam plus CLI; bloodstream and wound (the cluster's isolates). Seeds are visible to every session; their messages are checked against the raw data (`tests/test_against_source.py`).
 
 ## 10. Public deployment (judges use it on their own devices)
 - **Host:** UpCloud, Helsinki, behind the box's existing Traefik (`docs/HOSTING.md`). Compose project `jx-tyks`, 1 GB memory, and no published ports. `Dockerfile` and `deploy/compose.yml` are owned by the integrator.

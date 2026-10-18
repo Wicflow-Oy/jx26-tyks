@@ -7,6 +7,7 @@
   per UTC day. Counted in memory only, so no IP address is written to disk. Calls without an IP (the precompute CLI)
   count toward the spend cap only.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -43,8 +44,15 @@ def _utc_day(timestamp: float) -> str:
 
 
 class Guard:
-    def __init__(self, *, cap_usd: float | None = None, per_min: int | None = None, per_day: int | None = None,
-                 prices: dict | None = None, clock=time.time):
+    def __init__(
+        self,
+        *,
+        cap_usd: float | None = None,
+        per_min: int | None = None,
+        per_day: int | None = None,
+        prices: dict | None = None,
+        clock=time.time,
+    ):
         self.cap_usd = config.DAILY_SPEND_USD if cap_usd is None else cap_usd
         self.per_min = config.LLM_RATE_LIMIT_PER_MIN if per_min is None else per_min
         self.per_day = config.LLM_RATE_LIMIT_PER_DAY if per_day is None else per_day
@@ -53,7 +61,7 @@ class Guard:
         self._lock = threading.Lock()
         self._day = ""
         self._recent: defaultdict[str, deque[float]] = defaultdict(deque)  # IP -> call times in the last minute
-        self._today: Counter[str] = Counter()                                # IP -> calls this UTC day
+        self._today: Counter[str] = Counter()  # IP -> calls this UTC day
 
     def check(self, client_ip: str | None) -> str | None:
         """None if a live call may start (and counts it), else the fallback reason "spend_cap" or "rate_limit"."""
@@ -87,8 +95,11 @@ class Guard:
         usd = self.cost(model, usage)
         try:
             with self._db() as con:
-                con.execute("INSERT INTO llm_spend (day, usd) VALUES (?, ?) "
-                            "ON CONFLICT(day) DO UPDATE SET usd = usd + excluded.usd", (_utc_day(self.clock()), usd))
+                con.execute(
+                    "INSERT INTO llm_spend (day, usd) VALUES (?, ?) "
+                    "ON CONFLICT(day) DO UPDATE SET usd = usd + excluded.usd",
+                    (_utc_day(self.clock()), usd),
+                )
         except (sqlite3.Error, OSError) as e:  # check() then fails closed on the same database
             log.warning("spend not recorded (%s)", type(e).__name__)
         return usd

@@ -2,6 +2,7 @@
 
 A fake client stands in for the Anthropic SDK, so no test touches the network or needs a key.
 """
+
 import json
 import sqlite3
 from contextlib import closing
@@ -12,7 +13,7 @@ import httpx2
 import numpy as np
 import pytest
 
-from aei import config, narrator
+from aei import config, narrator, templates
 from aei.narrator import (
     AnthropicNarrator,
     CachedNarrator,
@@ -23,12 +24,25 @@ from aei.narrator import (
 from aei.narrator.anthropic_llm import SYSTEM_PROMPT
 from aei.render import render_id
 
-TEMPLATE = "phenotype_cluster"
-SLOTS = {"ward_label": "Intensive care unit", "organism_label": "S. aureus (MRSA)", "n_patients": 13,
-         "pattern": "FOX:R VAN:S CLI:R", "first_date": "2026-03-03", "n_share": 12, "expected_low": 0,
-         "expected_high": 1}
-GOOD = ("{ward_label}: unusual pattern, {organism_label} in {n_patients} patients since {first_date}; {n_share} of "
-        "{n_patients} share an antibiogram ({pattern}). Typing advised.")
+TEMPLATE = "ob_phenotype_marker__ok"  # the ICU MRSA cluster card of 29 Mar 2026
+SLOTS = {
+    "ward": "ICU",
+    "organism_label": "MRSA",
+    "n_patients": 13,
+    "pattern": "FOX:R VAN:S CLI:R",
+    "first_date": "2026-03-03",
+    "n_share": 12,
+    "expected_low": 0,
+    "expected_high": 1,
+    "observed_year_before": 0,
+    "bg": [3, 34],
+    "bg_label": "MRSA",
+    "bg_share": 3 / 34,
+}
+GOOD = (
+    "{ward}: unusual pattern, {organism_label} in {n_patients} patients since {first_date}; {n_share} of {n_patients} "
+    "share an antibiogram ({pattern}). Typing advised."
+)
 
 
 @pytest.fixture(autouse=True)
@@ -52,9 +66,11 @@ class FakeClient:
         self.requests.append(request)
         if self.error:
             raise self.error
-        return SimpleNamespace(stop_reason=self.stop_reason, usage=SimpleNamespace(input_tokens=1000, output_tokens=200),
-                               content=[SimpleNamespace(type="thinking", thinking=""),
-                                        SimpleNamespace(type="text", text=self.text)])
+        return SimpleNamespace(
+            stop_reason=self.stop_reason,
+            usage=SimpleNamespace(input_tokens=1000, output_tokens=200),
+            content=[SimpleNamespace(type="thinking", thinking=""), SimpleNamespace(type="text", text=self.text)],
+        )
 
 
 def live(client, **guard):
@@ -78,7 +94,7 @@ def test_model_skeleton_is_rendered_by_code():
     n = live(FakeClient()).narrate(TEMPLATE, SLOTS, audience="ed")
     assert n.provider == "anthropic" and n.validated and n.fallback_reason is None
     assert n.skeleton == GOOD
-    assert n.text.startswith("Intensive care unit: unusual pattern, S. aureus (MRSA) in 13 patients since 3 Mar; 12 of 13")
+    assert n.text.startswith("ICU: unusual pattern, MRSA in 13 patients since 3 Mar; 12 of 13")
 
 
 def test_request_follows_the_api_rules():
@@ -93,15 +109,20 @@ def test_request_follows_the_api_rules():
     assert first["system"] == second["system"] == SYSTEM_PROMPT  # stable, so it never varies per request
 
 
-@pytest.mark.parametrize("client, reason", [
-    (FakeClient(stop_reason="max_tokens"), "stop_reason:max_tokens"),
-    (FakeClient(stop_reason="refusal"), "stop_reason:refusal"),
-    (FakeClient(text=GOOD.replace("{n_patients} patients", "13 patients")), "skeleton_invalid"),
-    (FakeClient(text=GOOD + " Give {dose}."), "skeleton_invalid"),
-    (FakeClient(text=GOOD + " The odds are rising."), "skeleton_invalid"),
-    (FakeClient(error=anthropic.APIConnectionError(request=httpx2.Request("POST", "https://api.anthropic.com"))),
-     "api_error:APIConnectionError"),
-])
+@pytest.mark.parametrize(
+    "client, reason",
+    [
+        (FakeClient(stop_reason="max_tokens"), "stop_reason:max_tokens"),
+        (FakeClient(stop_reason="refusal"), "stop_reason:refusal"),
+        (FakeClient(text=GOOD.replace("{n_patients} patients", "13 patients")), "skeleton_invalid"),
+        (FakeClient(text=GOOD + " Give {dose}."), "skeleton_invalid"),
+        (FakeClient(text=GOOD + " The odds are rising."), "skeleton_invalid"),
+        (
+            FakeClient(error=anthropic.APIConnectionError(request=httpx2.Request("POST", "https://api.anthropic.com"))),
+            "api_error:APIConnectionError",
+        ),
+    ],
+)
 def test_every_failure_falls_back_to_the_template(client, reason):
     n = live(client).narrate(TEMPLATE, SLOTS)
     assert (n.provider, n.fallback_reason, n.text) == ("template", reason, render_id(TEMPLATE, SLOTS))
@@ -111,6 +132,53 @@ def test_every_failure_falls_back_to_the_template(client, reason):
 def test_validator_errors_are_reported_on_fallback():
     n = live(FakeClient(text=GOOD + " Give {dose}.")).narrate(TEMPLATE, SLOTS)
     assert "unknown_slot:dose" in n.errors
+
+
+@pytest.mark.parametrize("identifier", ["P001948", "C0000003-1"])
+def test_a_patient_or_isolate_id_in_the_slots_never_reaches_the_model(identifier):
+    client = FakeClient()
+    n = live(client).narrate(TEMPLATE, {**SLOTS, "ward": f"ICU {identifier}"}, audience="ed")
+    assert (n.provider, n.fallback_reason) == ("template", "identifier_in_slots") and client.requests == []
+
+
+def test_ed_heads_up_uses_drug_names_built_from_slots():
+    cluster = {
+        "ward": "URO",
+        "template_id": "ob_phenotype_marker",
+        "slots": {
+            "ward": "URO",
+            "organism_label": "ESBL E. coli",
+            "n_patients": 6,
+            "n_share": 6,
+            "first_date": "2025-05-30",
+            "pattern": "AMP:R CXM:R CRO:R MEM:S",
+            "expected_low": 0,
+            "expected_high": 6,
+        },
+    }
+    template_id, slots = templates.ed_heads_up(cluster)
+    n = TemplateNarrator().narrate(template_id, slots, audience="ed")
+    assert n.validated and n.text == (
+        "Heads-up from infection control: possible ESBL E. coli cluster on Urology (URO). 6 patients since 30 May; 6 "
+        "of 6 share one antibiogram: ampicillin R, cefuroxime R, ceftriaxone R, meropenem S. Under investigation; "
+        "typing advised. Dates are sample dates."
+    )
+    case = {
+        "ward": "GER",
+        "template_id": "ob_thl_single",
+        "slots": {
+            "marker_label": "VRE",
+            "organism_label": "E. faecalis",
+            "specimen": "wound",
+            "sample_date": "2026-09-11",
+        },
+    }
+    assert TemplateNarrator().narrate(*templates.ed_heads_up(case), audience="ed").text == (
+        "Heads-up from infection control: VRE (E. faecalis) in a wound sample on Geriatrics (GER), sampled 11 Sep. "
+        "Alert organism under THL guidance."
+    )
+    other = {"ward": "ICU", "template_id": "seen_before", "slots": {"pattern": "FOX:R VAN:S CLI:R"}}
+    assert templates.ed_heads_up(other) == ("seen_before", {"pattern": "cefoxitin R, vancomycin S, clindamycin R"})
 
 
 def test_no_key_means_no_client_and_no_call():
@@ -189,26 +257,43 @@ def test_replay_miss_and_tampered_cache_fall_back(tmp_path):
 
 def test_cache_key_covers_every_input_and_ignores_numpy_types():
     def key(**change):
-        args = {"provider": "anthropic", "model": "claude-haiku-5-5", "prompt_version": "narrator-1",
-                "template_id": TEMPLATE, "slots": SLOTS, "audience": "infection_control", "language": "en", **change}
+        args = {
+            "provider": "anthropic",
+            "model": "claude-haiku-5-5",
+            "prompt_version": "narrator-1",
+            "template_id": TEMPLATE,
+            "slots": SLOTS,
+            "audience": "infection_control",
+            "language": "en",
+            **change,
+        }
         return cache_key(**args)
 
     base = key()
-    for change in ({"provider": "other"}, {"model": "claude-sonnet-5-5"}, {"prompt_version": "narrator-2"},
-                   {"template_id": "seen_before"}, {"slots": {**SLOTS, "n_patients": 14}}, {"audience": "ed"},
-                   {"language": "fi"}):
+    for change in (
+        {"provider": "other"},
+        {"model": "claude-sonnet-5-5"},
+        {"prompt_version": "narrator-2"},
+        {"template_id": "ob_stepup"},
+        {"slots": {**SLOTS, "n_patients": 14}},
+        {"audience": "ed"},
+        {"language": "fi"},
+    ):
         assert key(**change) != base, change
     # precompute passes numpy counts, the API passes JSON ints: both must find the same entry
     assert key(slots={**SLOTS, "n_patients": np.int64(13)}) == base
 
 
-@pytest.mark.parametrize("env, public, kind, records", [
-    (None, False, TemplateNarrator, None),
-    (None, True, CachedNarrator, False),
-    ("template", True, TemplateNarrator, None),
-    ("replay", False, CachedNarrator, False),
-    ("anthropic", False, CachedNarrator, True),
-])
+@pytest.mark.parametrize(
+    "env, public, kind, records",
+    [
+        (None, False, TemplateNarrator, None),
+        (None, True, CachedNarrator, False),
+        ("template", True, TemplateNarrator, None),
+        ("replay", False, CachedNarrator, False),
+        ("anthropic", False, CachedNarrator, True),
+    ],
+)
 def test_get_narrator_reads_env(monkeypatch, env, public, kind, records):
     monkeypatch.setattr(config, "PUBLIC", public)
     if env:

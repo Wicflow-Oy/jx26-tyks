@@ -1,4 +1,5 @@
 """Tests for the shared statistical primitives in aei/stats.py (pure functions; no data needed)."""
+
 import math
 
 import numpy as np
@@ -27,8 +28,9 @@ def test_jeffreys_edges():
     assert lo95 < lo90 < 0.5 < hi90 < hi95
 
 
-@pytest.mark.parametrize("n,state", [(0, "not_enough_data"), (9, "not_enough_data"), (10, "low_n"), (29, "low_n"),
-                                     (30, "ok"), (5000, "ok")])
+@pytest.mark.parametrize(
+    "n,state", [(0, "not_enough_data"), (9, "not_enough_data"), (10, "low_n"), (29, "low_n"), (30, "ok"), (5000, "ok")]
+)
 def test_n_state_boundaries(n, state):
     assert stats.n_state(n) == state
 
@@ -53,7 +55,7 @@ def test_change_test_matches_beta_binomial_by_hand():
 
 
 def test_change_test_prior_strength_is_capped():
-    # with n_prior far above 200 the predictive spread stops shrinking: same p for 1,000 and 100,000 prior isolates
+    # with n_prior far above 200 the spread of the test stops shrinking: same p for 1,000 and 100,000 prior isolates
     # (hospital anchor chosen so both priors are exactly 10%)
     p1 = stats.change_test(8, 40, 100, 1000, 1000, 10004)
     p2 = stats.change_test(8, 40, 10000, 100000, 1000, 10004)
@@ -64,7 +66,12 @@ def test_change_test_prior_strength_is_capped():
 
 
 def test_change_test_quiet_and_empty():
-    assert stats.change_test(0, 0, 10, 100, 10, 100) == {"p": 1.0, "changed": False, "prior": pytest.approx(stats.prior_rate(10, 100, 10, 100)), "expected": 0.0}
+    assert stats.change_test(0, 0, 10, 100, 10, 100) == {
+        "p": 1.0,
+        "changed": False,
+        "prior": pytest.approx(stats.prior_rate(10, 100, 10, 100)),
+        "expected": 0.0,
+    }
     r = stats.change_test(2, 20, 10, 100, 100, 1000)
     assert r["changed"] is False and r["p"] > C.CHANGE_ALPHA
 

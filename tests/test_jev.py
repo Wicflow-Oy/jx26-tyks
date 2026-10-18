@@ -1,4 +1,5 @@
 """The optional Jev second opinion stays inert without a key and a passing calibration, and never reaches cds.py."""
+
 import ast
 import json
 from pathlib import Path
@@ -7,8 +8,13 @@ import pytest
 
 from aei import config, jev
 
-SIGNAL = {"kind": "phenotype_cluster", "organism": "Staphylococcus aureus", "ward": "ICU", "priority": "P1",
-          "slots": {"n_patients": 13, "n_share": 12, "first_date": "2026-03-03"}}
+SIGNAL = {
+    "kind": "phenotype_cluster",
+    "organism": "Staphylococcus aureus",
+    "ward": "ICU",
+    "priority": "P1",
+    "slots": {"n_patients": 13, "n_share": 12, "first_date": "2026-03-03"},
+}
 
 
 @pytest.fixture(autouse=True)
@@ -28,8 +34,9 @@ class FakeJev:
 
 
 def write_calibration(**report):
-    jev.calibration_file().write_text(json.dumps({"model": jev.JEV_MODEL, "brier": 0.1, "ece": 0.03, "n": 1350,
-                                                  **report}), encoding="utf-8")
+    jev.calibration_file().write_text(
+        json.dumps({"model": jev.JEV_MODEL, "brier": 0.1, "ece": 0.03, "n": 1350, **report}), encoding="utf-8"
+    )
 
 
 def test_inert_without_key_even_when_calibrated():
@@ -53,9 +60,15 @@ def test_configured_answer_shape_and_replay(monkeypatch):
     write_calibration(passed=True)
     client = FakeJev(p=0.8)
     out = jev.JevAdapter(client).assess(SIGNAL)
-    assert out == {"provider": "jev", "mode": "noul", "question": "Forward to the ED?", "answer": "yes", "score": 0.8,
-                   "label": "Second opinion (Jev, experimental). Not used in prescribing alerts.",
-                   "calibration": {"brier": 0.1, "ece": 0.03, "n": 1350, "passed": True}}
+    assert out == {
+        "provider": "jev",
+        "mode": "noul",
+        "question": "Forward to the ED?",
+        "answer": "yes",
+        "score": 0.8,
+        "label": "Second opinion (Jev, experimental). Not used in prescribing alerts.",
+        "calibration": {"brier": 0.1, "ece": 0.03, "n": 1350, "passed": True},
+    }
     state = client.bodies[0]["state"]
     assert "first_date" not in json.dumps(state) and state["patients"] == 13  # no dates reach Jev
     assert jev.JevAdapter(FakeJev(p=0.1)).assess(SIGNAL)["score"] == 0.8  # replayed from .cache/jev, not asked again
@@ -75,6 +88,7 @@ def test_http_client_refuses_plain_http():
 
 class ScoreProvider:
     """A second-opinion provider whose score is a function of the simulated truth."""
+
     model = jev.JEV_MODEL
 
     def __init__(self, score):

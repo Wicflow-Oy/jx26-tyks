@@ -5,6 +5,7 @@ the skeleton only, never final text: on replay the skeleton is validated and ren
 a stale or edited cache file can never put a number on screen. Replay never calls the network; a miss returns the
 template. Record mode calls the inner narrator on a miss and stores the result if it is a validated model narration.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -30,10 +31,15 @@ def _plain(value):
     return str(value)
 
 
-def cache_key(provider: str, model: str | None, prompt_version: str, template_id: str, slots: dict, audience: str,
-              language: str) -> str:
-    raw = json.dumps([provider, model, prompt_version, template_id, slots, audience, language], sort_keys=True,
-                     default=_plain, ensure_ascii=False)
+def cache_key(
+    provider: str, model: str | None, prompt_version: str, template_id: str, slots: dict, audience: str, language: str
+) -> str:
+    raw = json.dumps(
+        [provider, model, prompt_version, template_id, slots, audience, language],
+        sort_keys=True,
+        default=_plain,
+        ensure_ascii=False,
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -50,8 +56,15 @@ class CachedNarrator:
         key = cache_key(self.name, self.model, self.prompt_version, template_id, slots, audience, language)
         return self.path / f"{key}.json"
 
-    def narrate(self, template_id: str, slots: dict, *, audience: str = "infection_control", language: str = "en",
-                client_ip: str | None = None) -> Narration:
+    def narrate(
+        self,
+        template_id: str,
+        slots: dict,
+        *,
+        audience: str = "infection_control",
+        language: str = "en",
+        client_ip: str | None = None,
+    ) -> Narration:
         check_request(template_id, audience, language)
         file = self._file(template_id, slots, audience, language)
         if file.exists():
@@ -71,8 +84,15 @@ class CachedNarrator:
         return narration
 
     def _store(self, file: Path, template_id: str, audience: str, language: str, skeleton: str) -> None:
-        entry = {"provider": self.name, "model": self.model, "prompt_version": self.prompt_version,
-                 "template_id": template_id, "audience": audience, "language": language, "skeleton": skeleton}
+        entry = {
+            "provider": self.name,
+            "model": self.model,
+            "prompt_version": self.prompt_version,
+            "template_id": template_id,
+            "audience": audience,
+            "language": language,
+            "skeleton": skeleton,
+        }
         self.path.mkdir(parents=True, exist_ok=True)
         tmp = file.with_suffix(".tmp")
         tmp.write_text(json.dumps(entry, ensure_ascii=False, indent=1), encoding="utf-8")

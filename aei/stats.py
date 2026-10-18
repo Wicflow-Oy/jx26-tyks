@@ -1,4 +1,5 @@
 """Shared statistical primitives (pure functions, no pandas). Ported from analysis scripts 06c/33b/39."""
+
 import numpy as np
 from scipy import stats as st
 
@@ -28,9 +29,17 @@ def prior_rate(x_prior: int, n_prior: int, x_hosp: int, n_hosp: int, m: float = 
     return (x_prior + m * ph) / (n_prior + m)
 
 
-def change_test(x_w: int, n_w: int, x_prior: int, n_prior: int, x_hosp: int, n_hosp: int,
-                alpha: float = C.CHANGE_ALPHA, direction: str = "up") -> dict:
-    """Beta-binomial predictive test: is x_w of n_w surprising against the unit's own prior 52 weeks?
+def change_test(
+    x_w: int,
+    n_w: int,
+    x_prior: int,
+    n_prior: int,
+    x_hosp: int,
+    n_hosp: int,
+    alpha: float = C.CHANGE_ALPHA,
+    direction: str = "up",
+) -> dict:
+    """Beta-binomial tail-probability test: is x_w of n_w surprising against the unit's own prior 52 weeks?
 
     Counts are of the event being monitored (resistant isolates for resistance, NOT-covered for coverage), so
     direction="up" asks "more events than expected". Returns {"p": float, "changed": bool, "prior": float,
@@ -49,7 +58,9 @@ def pooled_estimate(x_w: int, n_w: int, prior: float, k: float = C.POOLING_K) ->
     return (x_w + k * prior) / (n_w + k)
 
 
-def pooled_interval(x_w: int, n_w: int, prior: float, k: float = C.POOLING_K, level: float = 0.95) -> tuple[float, float]:
+def pooled_interval(
+    x_w: int, n_w: int, prior: float, k: float = C.POOLING_K, level: float = 0.95
+) -> tuple[float, float]:
     """Equal-tailed interval of Beta(x_w + k*prior, n_w - x_w + k*(1-prior))."""
     a, b = x_w + k * prior, n_w - x_w + k * (1 - prior)
     q = (1 - level) / 2

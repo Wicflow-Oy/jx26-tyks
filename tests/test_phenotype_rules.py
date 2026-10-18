@@ -1,5 +1,6 @@
 """The shared effective-result rules (aei/phenotype_rules.py): one test per rule, on real isolates wherever the data
 has one, plus two whole-dataset checks that no inference ever replaces a result the laboratory reported."""
+
 import pandas as pd
 import pytest
 
@@ -53,8 +54,11 @@ def test_intrinsic_pairs(iso):
 def test_mrsa_makes_every_beta_lactam_r(iso):
     for drug in ("AMP", "CXM", "CRO", "TZP", "MEM"):
         assert real(iso, ICU_MRSA, drug) == ("R", "inferred_mrsa"), drug
-    assert [real(iso, ICU_MRSA, d) for d in ("FOX", "CLI", "VAN")] == [("R", "reported"), ("R", "reported"),
-                                                                       ("S", "reported")]
+    assert [real(iso, ICU_MRSA, d) for d in ("FOX", "CLI", "VAN")] == [
+        ("R", "reported"),
+        ("R", "reported"),
+        ("S", "reported"),
+    ]
 
 
 def test_mrsa_rule_comes_before_a_reported_s():

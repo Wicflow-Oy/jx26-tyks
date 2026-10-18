@@ -8,7 +8,12 @@ with status against the previous week, a unit / home-area map and priority count
 - Per-week signals are cached in memory and in `config.CACHE_DIR/signals/{as_of}.json` (other rules/windows get a suffix).
   A cache file is used only when its fingerprint (detector sources, templates, config, data shape) matches.
 - The data-quality section always carries a completeness line; the quiet section counts the units with no signal.
+- Every item has a short `title` (detectors.with_title) next to its `text`.
+- Signals are computed and cached in English; `lang="fi"` re-renders each item's text and title from its template id
+  and slots (aei/i18n.py), so a language never changes a cache or a number.
+- The case file's rows: `evidence_rows` (the isolates behind an item), `line_list` and `epi_curve`.
 """
+
 import copy
 import hashlib
 import json
@@ -24,12 +29,20 @@ from . import config as C
 from . import data
 from . import detectors as registry
 from . import signal as sig
+from .data import to_json
+from .i18n import label, localize_signal
 from .render import render_id
 
 log = logging.getLogger(__name__)
 
-SECTIONS = [("unusual_patterns", "Unusual patterns"), ("changed", "What changed"), ("policy", "Policy lines"),
-            ("seen_before", "Seen before"), ("data_quality", "Data quality"), ("quiet", "Quiet")]
+SECTIONS = [
+    ("unusual_patterns", "Unusual patterns"),
+    ("changed", "What changed"),
+    ("policy", "Policy lines"),
+    ("seen_before", "Seen before"),
+    ("data_quality", "Data quality"),
+    ("quiet", "Quiet"),
+]
 PRIORITY_ORDER = {"P1": 0, "P2": 1, "P3": 2, "info": 3}
 STATUS_ORDER = {"new": 0, "ongoing": 1, "resolved": 2}
 FOOTER = "Every number links to its count and filter. Text narrated from computed numbers only."
@@ -41,6 +54,7 @@ _FP: dict = {}
 
 
 # ---------------------------------------------------------------- dates and cache plumbing
+
 
 def _day(as_of) -> str:
     return str(pd.Timestamp(str(as_of)[:10]).date())
@@ -61,9 +75,22 @@ def fingerprint(ds) -> str:
     if key in _FP:
         return _FP[key]
     pkg = Path(__file__).resolve().parent
-    files = [pkg / "detectors" / f"{n}.py" for n in registry.DETECTORS] + [pkg / "detectors" / "__init__.py"]
-    files += [pkg / f for f in ("templates.py", "templates_trends.py", "templates_outbreak.py", "signal.py", "render.py",
-                                "config.py", "stats.py", "data.py", "brief.py")]
+    detector_files = [*registry.DETECTORS, "__init__", "explanations"]  # explanations: the cluster cards' H1-H6
+    files = [pkg / "detectors" / f"{n}.py" for n in detector_files]
+    files += [
+        pkg / f
+        for f in (
+            "templates.py",
+            "templates_trends.py",
+            "templates_outbreak.py",
+            "signal.py",
+            "render.py",
+            "config.py",
+            "stats.py",
+            "data.py",
+            "brief.py",
+        )
+    ]
     h = hashlib.sha256(CACHE_SCHEMA.encode())
     for f in files:
         h.update(f.name.encode())
@@ -100,7 +127,9 @@ def clear_memory_cache() -> None:
     _FP.clear()
 
 
-def week_signals(ds, as_of, rule: str = DEFAULT_RULE, window: str = DEFAULT_WINDOW, cache: bool = True) -> tuple[list, dict]:
+def week_signals(
+    ds, as_of, rule: str = DEFAULT_RULE, window: str = DEFAULT_WINDOW, cache: bool = True
+) -> tuple[list, dict]:
     """Raw detector output for one as-of date: (signals, {"ran", "skipped"}). Memory -> disk -> compute.
     Bad parameters raise here: the registry skips a failing detector, so they would otherwise cache a partial week."""
     if rule not in ("readme_period", "30d"):
@@ -118,16 +147,26 @@ def week_signals(ds, as_of, rule: str = DEFAULT_RULE, window: str = DEFAULT_WIND
         res = (d["signals"], d.get("detectors", {"ran": [], "skipped": []}))
     else:
         signals, report = registry.run(ds, as_of, rule=rule, window=window)
-        signals = [registry.plain(s) for s in signals]
+        signals = [to_json(s) for s in signals]
         res = (signals, report)
         if cache:
-            _write_cache(path, {"fingerprint": fp, "as_of": as_of, "rule": rule, "window": window,
-                                "detectors": report, "signals": signals})
+            _write_cache(
+                path,
+                {
+                    "fingerprint": fp,
+                    "as_of": as_of,
+                    "rule": rule,
+                    "window": window,
+                    "detectors": report,
+                    "signals": signals,
+                },
+            )
     _MEM[key] = res
     return res
 
 
 # ---------------------------------------------------------------- units touched by a signal
+
 
 def _as_list(v) -> list:
     if v is None:
@@ -165,8 +204,13 @@ def _with_status(signals_now: list, signals_prev: list) -> list:
 
 
 def _sort_key(s: dict):
-    return (STATUS_ORDER.get(s.get("status"), 9) == 2, PRIORITY_ORDER.get(s.get("priority"), 9),
-            STATUS_ORDER.get(s.get("status"), 9), str(s.get("ward") or ""), s.get("id", ""))
+    return (
+        STATUS_ORDER.get(s.get("status"), 9) == 2,
+        PRIORITY_ORDER.get(s.get("priority"), 9),
+        STATUS_ORDER.get(s.get("status"), 9),
+        str(s.get("ward") or ""),
+        s.get("id", ""),
+    )
 
 
 def _signals_at(ds, as_of, rule, window, cache=True) -> tuple[list, dict]:
@@ -177,17 +221,20 @@ def _signals_at(ds, as_of, rule, window, cache=True) -> tuple[list, dict]:
     return _with_status(now, before), report
 
 
-def signals_for(ds, as_of, ward=None, rule: str = DEFAULT_RULE, window: str = DEFAULT_WINDOW) -> list[dict]:
+def signals_for(
+    ds, as_of, ward=None, rule: str = DEFAULT_RULE, window: str = DEFAULT_WINDOW, lang: str = "en"
+) -> list[dict]:
     """Active (new or ongoing) signals at `as_of` touching a unit (str or list of codes); all active signals if None."""
     sigs, _ = _signals_at(ds, as_of, rule, window)
     active = _active(sigs)
-    if ward is None:
-        return sorted(active, key=_sort_key)
-    wanted = set(_as_list(ward))
-    return sorted([s for s in active if wanted & set(units_of(s))], key=_sort_key)
+    if ward is not None:
+        wanted = set(_as_list(ward))
+        active = [s for s in active if wanted & set(units_of(s))]
+    return [localize_signal(s, lang) for s in sorted(active, key=_sort_key)]
 
 
 # ---------------------------------------------------------------- map, quiet line, counts
+
 
 def _unit_state(sigs: list) -> str:
     if any(s.get("section") in ("unusual_patterns", "seen_before") or s.get("priority") == "P1" for s in sigs):
@@ -201,9 +248,9 @@ def _unit_state(sigs: list) -> str:
 
 def _build_map(ds, active: list) -> dict:
     units = []
-    for w, label in C.WARD_LABELS.items():
+    for w, name in C.WARD_LABELS.items():
         ss = [s for s in active if w in units_of(s)]
-        units.append({"ward": w, "label": label, "state": _unit_state(ss), "signal_ids": [s["id"] for s in ss]})
+        units.append({"ward": w, "label": name, "state": _unit_state(ss), "signal_ids": [s["id"] for s in ss]})
     areas = []
     for a in sorted(ds.isolates.home_area.dropna().unique()):
         ss = [s for s in active if s.get("home_area") == a]
@@ -213,23 +260,53 @@ def _build_map(ds, active: list) -> dict:
 
 def _structural_item(kind: str, key: dict, as_of: str, template_id: str, slots: dict, evidence: dict, section: str):
     """Brief lines that are not detector signals (the quiet line). Same shape as a signal, priority info."""
-    return {"id": sig.signal_id(kind, key), "kind": kind,
-            "priority": "info", "status": "ongoing", "section": section, "as_of": as_of, "ward": None, "home_area": None,
-            "specimen": None, "organism": None, "drug": None, "first_sample_date": None, "template_id": template_id,
-            "slots": slots, "text": render_id(template_id, slots), "advice": None, "evidence": evidence, "key": key}
+    return registry.with_title(
+        {
+            "id": sig.signal_id(kind, key),
+            "kind": kind,
+            "priority": "info",
+            "status": "ongoing",
+            "section": section,
+            "as_of": as_of,
+            "ward": None,
+            "home_area": None,
+            "specimen": None,
+            "organism": None,
+            "drug": None,
+            "first_sample_date": None,
+            "template_id": template_id,
+            "slots": slots,
+            "text": render_id(template_id, slots),
+            "advice": None,
+            "evidence": evidence,
+            "key": key,
+        }
+    )
 
 
 def _quiet_item(as_of: str, units: list) -> dict:
     quiet = [u["ward"] for u in units if u["state"] == "quiet"]
     n_units = len(units)
-    evidence = {"filter": {"ward": quiet, "specimen": None, "organism": None, "drug": None,
-                           "date_from": as_of, "date_to": as_of, "rule": None},
-                "counts": {"quiet_units": len(quiet), "units": n_units},
-                "method": "units with no active signal this week (map state quiet)", "params": {}}
+    evidence = {
+        "filter": {
+            "ward": quiet,
+            "specimen": None,
+            "organism": None,
+            "drug": None,
+            "date_from": as_of,
+            "date_to": as_of,
+            "rule": None,
+        },
+        "counts": {"quiet_units": len(quiet), "units": n_units},
+        "method": "units with no active signal this week (map state quiet)",
+        "params": {},
+    }
     if quiet:
         slots = {"quiet": [len(quiet), n_units], "units_text": ", ".join(quiet)}
         return _structural_item("quiet", {"week": as_of}, as_of, "trend_quiet", slots, evidence, "quiet")
-    return _structural_item("quiet", {"week": as_of}, as_of, "trend_quiet_none", {"n_units": n_units}, evidence, "quiet")
+    return _structural_item(
+        "quiet", {"week": as_of}, as_of, "trend_quiet_none", {"n_units": n_units}, evidence, "quiet"
+    )
 
 
 def _counts(active: list) -> dict:
@@ -242,8 +319,11 @@ def _counts(active: list) -> dict:
 
 # ---------------------------------------------------------------- the brief
 
-def build_brief(ds, as_of, window: str = DEFAULT_WINDOW, rule: str = DEFAULT_RULE, cache: bool = True) -> dict:
-    """The Monday brief for data up to `as_of` (a Sunday); dated as_of + 1 day. Strictly as-of."""
+
+def build_brief(
+    ds, as_of, window: str = DEFAULT_WINDOW, rule: str = DEFAULT_RULE, cache: bool = True, lang: str = "en"
+) -> dict:
+    """The Monday brief for data up to `as_of` (a Sunday); dated as_of + 1 day. Strictly as-of. Texts in `lang`."""
     as_of = _day(as_of)
     sigs, report = _signals_at(ds, as_of, rule, window, cache)
     active = _active(sigs)
@@ -258,26 +338,44 @@ def build_brief(ds, as_of, window: str = DEFAULT_WINDOW, rule: str = DEFAULT_RUL
     gaps = [s for s in by_section["data_quality"] if s["kind"] == "completeness"]
     if not any(s["status"] != "resolved" for s in gaps):
         from .detectors import completeness
-        line = completeness.status_line(ds, as_of)
+
+        line = registry.with_title(completeness.status_line(ds, as_of))
         line["status"] = "new" if gaps else "ongoing"  # "new" right after a gap resolves
         by_section["data_quality"].insert(0, line)
     by_section["quiet"] = [_quiet_item(as_of, mp["units"])]
+    for u in mp["units"]:
+        u["label"] = label(u["label"], lang)
     return {
-        "as_of": as_of, "monday": _day(pd.Timestamp(as_of) + pd.Timedelta(days=1)), "app_name": C.APP_NAME,
-        "synthetic": True, "window": window, "rule": rule,
-        "header": {"title": "Monday brief", "data_to": as_of, "refreshed": "nightly",
-                   "result_lag_days": C.RESULT_LAG_DAYS,
-                   "dates_note": "Dates are sample dates; results usually arrive a couple of days later."},
-        "sections": [{"key": k, "title": t, "items": by_section.get(k, [])} for k, t in SECTIONS],
-        "map": mp, "counts": counts, "detectors": report, "footer": FOOTER,
+        "as_of": as_of,
+        "monday": _day(pd.Timestamp(as_of) + pd.Timedelta(days=1)),
+        "app_name": C.APP_NAME,
+        "synthetic": True,
+        "window": window,
+        "rule": rule,
+        "header": {
+            "title": label("Monday brief", lang),
+            "data_to": as_of,
+            "refreshed": label("nightly", lang),
+            "result_lag_days": C.RESULT_LAG_DAYS,
+            "dates_note": label("Dates are sample dates; results usually arrive a couple of days later.", lang),
+        },
+        "sections": [
+            {"key": k, "title": label(t, lang), "items": [localize_signal(s, lang) for s in by_section.get(k, [])]}
+            for k, t in SECTIONS
+        ],
+        "map": mp,
+        "counts": counts,
+        "detectors": report,
+        "footer": label(FOOTER, lang),
     }
 
 
 # ---------------------------------------------------------------- precompute
 
+
 def _weeks_arg(weeks) -> list[str]:
     if weeks in (None, "all"):
-        first, last = data.week_end(54), pd.Timestamp(C.DATA_END)
+        first, last = data.week_end(C.REPLAY_FIRST_WEEK - 1), pd.Timestamp(C.DATA_END)
         return [_day(d) for d in pd.date_range(first, last, freq="7D")]
     if weeks == "demo":
         out = []
@@ -300,7 +398,73 @@ def precompute(ds, weeks="all", rule: str = DEFAULT_RULE, window: str = DEFAULT_
         t = time.perf_counter()
         sigs, _ = week_signals(ds, a, rule, window, cache=True)
         active = _active(sigs)
-        out.append({"as_of": a, "monday": _day(pd.Timestamp(a) + pd.Timedelta(days=1)), "n_signals": len(active),
-                    "n_p1": sum(1 for s in active if s.get("priority") == "P1"),
-                    "seconds": round(time.perf_counter() - t, 3)})
+        out.append(
+            {
+                "as_of": a,
+                "monday": _day(pd.Timestamp(a) + pd.Timedelta(days=1)),
+                "n_signals": len(active),
+                "n_p1": sum(1 for s in active if s.get("priority") == "P1"),
+                "seconds": round(time.perf_counter() - t, 3),
+            }
+        )
     return out
+
+
+# ---------------------------------------------------------------- the case file: the isolates behind an item
+
+
+def _filtered(x: pd.DataFrame, f: dict) -> pd.DataFrame:
+    """Re-run a signal's evidence filter (CONTRACTS.md section 3) under its counting rule."""
+    keep = pd.Series(True, index=x.index)
+    for column, key in (("ward_code", "ward"), ("organism", "organism"), ("sex", "sex"), ("profile", "profile")):
+        if f.get(key) is not None:
+            keep &= x[column].isin([f[key]] if isinstance(f[key], str) else f[key])
+    if f.get("specimen"):
+        keep &= x.specimen.isin(C.SPECIMEN_GROUPS.get(f["specimen"], [f["specimen"]]))
+    if f.get("drug") in C.DRUGS:
+        keep &= x[f["drug"]].notna()
+    if f.get("date_from"):
+        keep &= x.sample_date >= pd.Timestamp(f["date_from"])
+    if f.get("date_to"):
+        keep &= x.sample_date <= pd.Timestamp(f["date_to"])
+    return data.first_isolates(x[keep], f["rule"])
+
+
+def evidence_rows(ds, signal: dict, as_of: str) -> pd.DataFrame:
+    """The isolates behind a signal, sampled on or before as_of: its listed isolate ids, else its filter when that
+    counts isolates. Unit-level checks (completeness, the quiet line) list none."""
+    ev = signal.get("evidence") or {}
+    x = ds.isolates[ds.isolates.sample_date <= pd.Timestamp(as_of)]
+    if ev.get("isolate_ids"):
+        rows = x[x.isolate_id.isin(ev["isolate_ids"])]
+    elif (ev.get("filter") or {}).get("rule") in ("readme_period", "30d"):
+        rows = _filtered(x, ev["filter"])
+    else:
+        rows = x.iloc[:0]
+    return rows.sort_values(["sample_date", "isolate_id"])
+
+
+def line_list(rows: pd.DataFrame) -> list[dict]:
+    """Synthetic isolate ids only: no patient id or name leaves the server."""
+    return [
+        {
+            "isolate_id": r.isolate_id,
+            "date": r.sample_date.date().isoformat(),
+            "ward": r.ward_code,
+            "care_day": None if pd.isna(r.care_day_no) else int(r.care_day_no),
+            "specimen": r.specimen,
+            "organism": r.organism,
+            "profile": r.profile,
+        }
+        for r in rows.itertuples()
+    ]
+
+
+def epi_curve(rows: pd.DataFrame, f: dict, as_of: str) -> list[dict]:
+    """Isolates per sample day, zero days included, over the filter's dates (widened to cover every row)."""
+    if rows.empty:
+        return []
+    start = min(pd.Timestamp(f["date_from"]), rows.sample_date.min()) if f.get("date_from") else rows.sample_date.min()
+    end = max(min(pd.Timestamp(f.get("date_to") or as_of), pd.Timestamp(as_of)), rows.sample_date.max())
+    per_day = rows.sample_date.value_counts()
+    return [{"date": d.date().isoformat(), "n": int(per_day.get(d, 0))} for d in pd.date_range(start, end)]

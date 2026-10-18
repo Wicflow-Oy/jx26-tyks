@@ -6,12 +6,14 @@ or when the Poisson lower tail of this week's count is < 1e-6 (35's threshold). 
 PHC-S gap of 8-14 Dec 2025 (0 cultures, usually about 51). A gap is "data gap, cause unknown", never a statement about
 resistance. In the week after a gap the unit is listed as resolved with that week's culture count.
 """
+
 import pandas as pd
 from scipy import stats as st
 
 from .. import config as C
 from .. import signal as sig
-from . import day, plain, ts, ward_label
+from ..data import to_json
+from . import iso, ts, ward_label
 
 HISTORY_DAYS = 56
 MIN_HISTORY_DAYS = 28
@@ -48,46 +50,83 @@ def unit_volumes(ds, as_of) -> pd.DataFrame:
             state = "ok"
         rows.append({"ward": w, "n_week": n, "expected": exp, "p_low": p, "state": state})
     out = pd.DataFrame(rows)
-    out.attrs.update(week_from=day(wk_from), week_to=day(end), history_from=day(hist_from), history_to=day(hist_to))
+    out.attrs.update(week_from=iso(wk_from), week_to=iso(end), history_from=iso(hist_from), history_to=iso(hist_to))
     return out
 
 
 def _evidence(v: pd.DataFrame, r, counts: dict) -> dict:
-    return plain({
-        "filter": {"ward": r.ward, "specimen": None, "organism": None, "drug": None,
-                   "date_from": v.attrs["week_from"], "date_to": v.attrs["week_to"], "rule": "all_cultures"},
-        "counts": counts,
-        "method": METHOD,
-        "params": {"history_from": v.attrs["history_from"], "history_to": v.attrs["history_to"],
-                   "silent_min_expected": SILENT_MIN_EXPECTED, "low_p": LOW_P},
-    })
+    return to_json(
+        {
+            "filter": {
+                "ward": r.ward,
+                "specimen": None,
+                "organism": None,
+                "drug": None,
+                "date_from": v.attrs["week_from"],
+                "date_to": v.attrs["week_to"],
+                "rule": "all_cultures",
+            },
+            "counts": counts,
+            "method": METHOD,
+            "params": {
+                "history_from": v.attrs["history_from"],
+                "history_to": v.attrs["history_to"],
+                "silent_min_expected": SILENT_MIN_EXPECTED,
+                "low_p": LOW_P,
+            },
+        }
+    )
 
 
 def _signal(v: pd.DataFrame, r) -> dict:
     expected = round(r.expected)
-    if r.state == "silent":
-        tid, slots = "completeness_gap", {"ward_label": ward_label(r.ward), "expected": expected}
-    else:
-        tid, slots = "trend_completeness_low", {"ward_label": ward_label(r.ward), "n_cultures": r.n_week,
-                                                "expected": expected}
+    slots = {"ward": r.ward, "ward_label": ward_label(r.ward), "n_cultures": r.n_week, "expected": expected}
+    tid = "trend_completeness_gap" if r.state == "silent" else "trend_completeness_low"
     counts = {"cultures_this_week": r.n_week, "expected_per_week": round(r.expected, 1), "p_low": r.p_low}
     return sig.make_signal(
-        "completeness", {"ward": r.ward}, priority="P2", as_of=v.attrs["week_to"], template_id=tid, slots=plain(slots),
-        evidence=_evidence(v, r, counts), ward=r.ward, first_sample_date=v.attrs["week_from"], section="data_quality",
-        advice="Lab check")
+        "completeness",
+        {"ward": r.ward},
+        priority="P2",
+        as_of=v.attrs["week_to"],
+        template_id=tid,
+        slots=to_json(slots),
+        evidence=_evidence(v, r, counts),
+        ward=r.ward,
+        first_sample_date=v.attrs["week_from"],
+        section="data_quality",
+        advice="Lab check",
+    )
 
 
 def _resolved_signal(v: pd.DataFrame, r, last: pd.DataFrame) -> dict:
     """`r`: the unit this week; `last`: last week's unit_volumes, when the unit was flagged."""
     was = last.set_index("ward").loc[r.ward]
-    slots = {"ward_label": ward_label(r.ward), "n_cultures": r.n_week, "last_flagged": last.attrs["week_to"],
-             "n_last": was.n_week, "expected_last": round(was.expected)}
-    counts = {"cultures_this_week": r.n_week, "last_flagged_cultures": was.n_week,
-              "last_flagged_expected_per_week": round(was.expected, 1)}
+    slots = {
+        "ward": r.ward,
+        "ward_label": ward_label(r.ward),
+        "n_cultures": r.n_week,
+        "last_flagged": last.attrs["week_to"],
+        "n_last": was.n_week,
+        "expected_last": round(was.expected),
+    }
+    counts = {
+        "cultures_this_week": r.n_week,
+        "last_flagged_cultures": was.n_week,
+        "last_flagged_expected_per_week": round(was.expected, 1),
+    }
     return sig.make_signal(
-        "completeness", {"ward": r.ward}, priority="P2", as_of=v.attrs["week_to"],
-        template_id="trend_completeness_resolved", slots=plain(slots), evidence=_evidence(v, r, counts), ward=r.ward,
-        first_sample_date=v.attrs["week_from"], status="resolved", section="data_quality")
+        "completeness",
+        {"ward": r.ward},
+        priority="P2",
+        as_of=v.attrs["week_to"],
+        template_id="trend_completeness_resolved",
+        slots=to_json(slots),
+        evidence=_evidence(v, r, counts),
+        ward=r.ward,
+        first_sample_date=v.attrs["week_from"],
+        status="resolved",
+        section="data_quality",
+    )
 
 
 def detect(ds, as_of, rule: str = "readme_period") -> list[dict]:
@@ -109,12 +148,29 @@ def status_line(ds, as_of) -> dict:
     end = ts(as_of)
     v = unit_volumes(ds, end)
     n_units = len(v)
-    evidence = plain({
-        "filter": {"ward": list(v.ward), "specimen": None, "organism": None, "drug": None,
-                   "date_from": v.attrs["week_from"], "date_to": v.attrs["week_to"], "rule": "all_cultures"},
-        "counts": {"units": n_units, "cultures_this_week": dict(zip(v.ward, v.n_week.astype(int)))},
-        "method": METHOD, "params": {"history_from": v.attrs["history_from"], "history_to": v.attrs["history_to"]},
-    })
-    return sig.make_signal("completeness", {"status": "all_units"}, priority="info", as_of=day(end),
-                           template_id="completeness_ok", slots={"n_units": n_units}, evidence=evidence,
-                           section="data_quality")
+    evidence = to_json(
+        {
+            "filter": {
+                "ward": list(v.ward),
+                "specimen": None,
+                "organism": None,
+                "drug": None,
+                "date_from": v.attrs["week_from"],
+                "date_to": v.attrs["week_to"],
+                "rule": "all_cultures",
+            },
+            "counts": {"units": n_units, "cultures_this_week": dict(zip(v.ward, v.n_week.astype(int)))},
+            "method": METHOD,
+            "params": {"history_from": v.attrs["history_from"], "history_to": v.attrs["history_to"]},
+        }
+    )
+    return sig.make_signal(
+        "completeness",
+        {"status": "all_units"},
+        priority="info",
+        as_of=iso(end),
+        template_id="trend_completeness_ok",
+        slots={"n_units": n_units},
+        evidence=evidence,
+        section="data_quality",
+    )

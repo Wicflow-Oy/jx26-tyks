@@ -1,37 +1,59 @@
-"""Text templates for every brief item, card and banner. Owned by the detectors/brief workstream; extend, don't rename.
+"""Every text template, in English: the ED heads-up here, and by area the outbreak detectors (templates_outbreak.py),
+the trend detectors and the brief (templates_trends.py), and the order layer and My ward (templates_ui.py). The
+Finnish twin of every id is in templates_fi.py.
 
-Each template: {"text": "... {slot:format} ...", "formats": {slot: format}}. Numbers ONLY through slots.
+Each template: {"text": "... {slot:format} ...", "title": optional row title}. Numbers ONLY through slots.
 Wording rules: no prediction language ("predicts", "forecast", "odds", "best choice", "recommended drug"); results
 are S/R; say "unusual pattern" and "typing advised"; never "decoy" or "outbreak confirmed"; a unit that sent no
 cultures is "data gap, cause unknown", never a statement about resistance.
 """
-TEMPLATES = {
-    # expected_low..expected_high: patients a year with this antibiogram on the unit at the hospital-wide rate
-    "phenotype_cluster": {"text": "{ward_label}: unusual pattern. {organism_label} in {n_patients:int} patients since "
-                                  "{first_date:short_date}; {n_share:int} of {n_patients:int} share one antibiogram "
-                                  "({pattern}). Expected with this antibiogram at the hospital-wide rate: "
-                                  "{expected_low:int}–{expected_high:int} patients a year on this unit. Typing advised."},
-    "resistance_change": {"text": "{ward_label} · {organism_label} · {drug_label}: {counts:xofn} resistant "
-                                  "({rate:pct0}, last {window_label}) vs {rate_prior:pct0} in the 52 weeks before. Changed; watch next week."},
-    "policy_line": {"text": "{drug_label}: {organism_label} in {population_label} is {rate:pct1} resistant "
-                            "({counts:xofn}, last 52 weeks), above the local {threshold:pct0} line. Same window a year "
-                            "earlier: {rate_prior:pct1}."},
-    "seen_before": {"text": "{ward_label} {organism_label} pattern: {same_ward_text}; {n_elsewhere:int} earlier patients elsewhere "
-                            "({elsewhere_text}). Profile match, not typing."},
-    "expert_rule": {"text": "{n_results:int} results to check: {rule_text}. Lab check."},
-    "completeness_ok": {"text": "All {n_units:int} units sent data this week."},
-    "completeness_gap": {"text": "{ward_label}: no cultures this week (usually {expected:int} a week). Data gap, cause unknown."},
-    "quiet": {"text": "No new signals on {n_quiet:int} other units."},
-}
 
-# Workstream modules add their own templates here (B1 outbreak detectors, B2 trends/brief). Existing ids above stay.
-try:
-    from .templates_outbreak import TEMPLATES as _OUTBREAK
-    TEMPLATES.update(_OUTBREAK)
-except ImportError:
-    pass
-try:
-    from .templates_trends import TEMPLATES as _TRENDS
-    TEMPLATES.update(_TRENDS)
-except ImportError:
-    pass
+from . import config as C
+from .templates_outbreak import TEMPLATES as OUTBREAK
+from .templates_trends import TEMPLATES as TRENDS
+from .templates_ui import TEMPLATES as UI
+
+TEMPLATES = {
+    # The emergency department's heads-up (audience "ed"; drafted for infection control to review, never sent from
+    # here): drug names in full, never panel codes, and no patient identifiers. Built by ed_heads_up below.
+    "ed_cluster": {
+        "text": (
+            "Heads-up from infection control: possible {organism_label} cluster on {ward_label} ({ward}). "
+            "{n_patients:int} patients since {first_date:short_date}; {n_share:int} of {n_patients:int} share one "
+            "antibiogram: {pattern}. Under investigation; typing advised. Dates are sample dates."
+        )
+    },
+    "ed_case": {
+        "text": (
+            "Heads-up from infection control: {marker_label} ({organism_label}) in a {specimen} sample on {ward_label} "
+            "({ward}), sampled {sample_date:short_date}. Alert organism under THL guidance."
+        )
+    },
+}
+_ED_CLUSTER = ("organism_label", "n_patients", "n_share", "first_date", "pattern")
+_ED_CASE = ("marker_label", "organism_label", "specimen", "sample_date")
+
+TEMPLATES |= OUTBREAK | TRENDS | UI
+
+
+def antibiogram_names(profile: str, lang: str = "en") -> str:
+    """'FOX:R VAN:S CLI:R' -> 'cefoxitin R, vancomycin S, clindamycin R' (Finnish: 'kefoksitiini R, ...')."""
+    from .i18n import label  # aei.i18n imports this module for its templates
+
+    return ", ".join(
+        f"{label(C.DRUG_NAMES[d], lang).lower()} {r}" for d, r in (token.split(":") for token in profile.split())
+    )
+
+
+def ed_heads_up(signal: dict, lang: str = "en") -> tuple[str, dict]:
+    """The template id and slots for the ED heads-up on one brief item: a cluster with a shared antibiogram, or a
+    single THL case, gets an ED template; any other item keeps its own. An antibiogram slot is always drug names, in
+    the language the heads-up is written in."""
+    slots = dict(signal["slots"])
+    if "pattern" in slots:
+        slots["pattern"] = antibiogram_names(slots["pattern"], lang)
+    where = {"ward": signal["ward"], "ward_label": C.WARD_LABELS.get(signal["ward"], signal["ward"])}
+    for template_id, names in (("ed_cluster", _ED_CLUSTER), ("ed_case", _ED_CASE)):
+        if signal["ward"] and set(names) <= set(slots):
+            return template_id, where | {k: slots[k] for k in names}
+    return signal["template_id"], slots

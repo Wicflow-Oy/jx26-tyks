@@ -13,6 +13,7 @@ untested pair comes after it, so it never replaces a result the laboratory repor
   local_esbl_rule      ESBL producer: cefuroxime and ceftriaxone R (this laboratory's rule, see config.LOCAL_ESBL_R).
   untested             none of the above; left out of every count.
 """
+
 import numpy as np
 import pandas as pd
 
@@ -27,8 +28,18 @@ MSSA_S = {"CXM", "CRO", "TZP", "MEM"}
 # tazobactam adds nothing. Meropenem has no enterococcal breakpoint, so it is in config.NO_BREAKPOINT instead.
 EF_FROM_AMP = {"TZP"}
 
-REASONS = ("no_breakpoint", "intrinsic", "inferred_mrsa", "reported", "inferred_mssa", "inferred_ampicillin",
-           "local_esbl_rule", "untested")
+REASONS = (
+    "no_breakpoint",
+    "intrinsic",
+    "inferred_mrsa",
+    "reported",
+    "inferred_mssa",
+    "inferred_ampicillin",
+    "local_esbl_rule",
+    "untested",
+)
+# EUCAST makes the species R whatever the test says: a property of the species, never a resistance the isolate acquired
+SPECIES_LEVEL = ("no_breakpoint", "intrinsic")
 REASON_TEXT = {  # on screen after the result, e.g. "cefuroxime R (inferred: MRSA, cefoxitin screen positive)"
     "no_breakpoint": "no EUCAST breakpoint for this species",
     "intrinsic": "intrinsic resistance (EUCAST)",

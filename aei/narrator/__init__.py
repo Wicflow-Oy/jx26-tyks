@@ -6,6 +6,7 @@
   public mode (AEI_PUBLIC=1), so the demo works with no key.
 - anthropic: live Claude calls behind the spend and rate guard, reusing and recording the replay cache.
 """
+
 from __future__ import annotations
 
 from .. import config
@@ -37,5 +38,20 @@ def health() -> dict:
     return {"narrator": selected(), "key_set": key_set(), **GUARD.status()}
 
 
-__all__ = ["AUDIENCES", "GUARD", "LANGUAGES", "NARRATORS", "AnthropicNarrator", "CachedNarrator", "Guard", "Narration",
-           "Narrator", "TemplateNarrator", "cache_key", "get_narrator", "health", "key_set", "selected"]
+__all__ = [
+    "AUDIENCES",
+    "GUARD",
+    "LANGUAGES",
+    "NARRATORS",
+    "AnthropicNarrator",
+    "CachedNarrator",
+    "Guard",
+    "Narration",
+    "Narrator",
+    "TemplateNarrator",
+    "cache_key",
+    "get_narrator",
+    "health",
+    "key_set",
+    "selected",
+]

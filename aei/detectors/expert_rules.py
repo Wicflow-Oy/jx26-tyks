@@ -9,13 +9,15 @@ Row-level lab checks on every isolate (no deduplication: each implausible report
   tzp_r_amp_s         piperacillin-tazobactam R with ampicillin S (Expert Rules v3.3 rule 1)        golden 276
 The brief lists the hits sampled in the last 7 days, one item per rule.
 """
+
 import logging
 
 import pandas as pd
 
 from .. import config as C
 from .. import signal as sig
-from . import day, plain, ts
+from ..data import to_json
+from . import iso, ts
 
 log = logging.getLogger(__name__)
 DAYS = 7
@@ -71,18 +73,45 @@ def detect(ds, as_of, rule: str = "readme_period", days: int = DAYS) -> list[dic
             continue
         units = list(dict.fromkeys(h.ward_code))
         n = len(h)
-        slots = plain({"rule_text": r["text"], "n_results": n, "results_word": "result" if n == 1 else "results",
-                       "period_label": "this week" if days == 7 else "in this window", "units_text": ", ".join(units)})
-        evidence = plain({
-            "filter": {"ward": units, "specimen": None, "organism": r.get("organisms"), "drug": None,
-                       "date_from": day(end - pd.Timedelta(days=days - 1)), "date_to": day(end), "rule": "all_isolates"},
-            "counts": {"hits": n, "checked": int(checked.sum()), "by_unit": h.ward_code.value_counts().to_dict()},
-            "method": method(r),
-            "params": {"rule_id": r["id"], "window_days": days},
-            "isolate_ids": h.isolate_id.astype(str).tolist(),
-        })
-        out.append(sig.make_signal(
-            "expert_rule", {"rule": r["id"]}, priority="P3", as_of=day(end), template_id="trend_expert_rule",
-            slots=slots, evidence=evidence, ward=None, first_sample_date=str(h.sample_date.min().date()),
-            section="data_quality", advice="Lab check"))
+        slots = to_json(
+            {
+                "rule_text": r["text"],
+                "n_results": n,
+                "results_word": "result" if n == 1 else "results",
+                "period_label": "this week" if days == 7 else "in this window",
+                "units_text": ", ".join(units),
+            }
+        )
+        evidence = to_json(
+            {
+                "filter": {
+                    "ward": units,
+                    "specimen": None,
+                    "organism": r.get("organisms"),
+                    "drug": None,
+                    "date_from": iso(end - pd.Timedelta(days=days - 1)),
+                    "date_to": iso(end),
+                    "rule": "all_isolates",
+                },
+                "counts": {"hits": n, "checked": int(checked.sum()), "by_unit": h.ward_code.value_counts().to_dict()},
+                "method": method(r),
+                "params": {"rule_id": r["id"], "window_days": days},
+                "isolate_ids": h.isolate_id.astype(str).tolist(),
+            }
+        )
+        out.append(
+            sig.make_signal(
+                "expert_rule",
+                {"rule": r["id"]},
+                priority="P3",
+                as_of=iso(end),
+                template_id="trend_expert_rule",
+                slots=slots,
+                evidence=evidence,
+                ward=None,
+                first_sample_date=str(h.sample_date.min().date()),
+                section="data_quality",
+                advice="Lab check",
+            )
+        )
     return out

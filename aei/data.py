@@ -8,12 +8,16 @@ Isolate table columns (one row per isolate; see CONTRACTS.md section 1):
   AMP..CLI ("S"/"R"/NaN), first_year (first per patient x organism x specimen x calendar year),
   first_30d (no same patient x organism x specimen isolate in the previous 30 days)
 """
+
 from dataclasses import dataclass
 from functools import lru_cache
 
+import numpy as np
 import pandas as pd
 
 from . import config as C
+
+FLAGS = ("esbl", "mrsa", "vre", "cpe")  # the laboratory's marker columns, 0 or 1 on every isolate
 
 
 @dataclass(frozen=True)
@@ -44,8 +48,12 @@ def load(data_dir: str | None = None) -> Dataset:
     cul["care_day_no"] = (cul.sample_date - cul.admission_date).dt.days + 1
     cul["hosp_onset"] = (cul.care_day_no >= C.HOSPITAL_ONSET_MIN_CARE_DAY).fillna(False)
     cul["age_band"] = cul.age_years.map(_age_band)
-    wide = sus.pivot_table(index="isolate_id", columns="antibiotic_code", values="result", aggfunc="first").reindex(columns=C.DRUGS)
-    prof = wide.apply(lambda r: " ".join(f"{k}:{r[k]}" for k in C.DRUGS if isinstance(r[k], str)), axis=1).rename("profile")
+    wide = sus.pivot_table(index="isolate_id", columns="antibiotic_code", values="result", aggfunc="first").reindex(
+        columns=C.DRUGS
+    )
+    prof = wide.apply(lambda r: " ".join(f"{k}:{r[k]}" for k in C.DRUGS if isinstance(r[k], str)), axis=1).rename(
+        "profile"
+    )
     nr = (wide == "R").sum(axis=1).rename("n_R")
     x = iso.merge(cul, on="culture_id").set_index("isolate_id").join(wide).join(prof).join(nr).reset_index()
     x = x.sort_values(["sample_date", "isolate_id"]).reset_index(drop=True)
@@ -53,7 +61,7 @@ def load(data_dir: str | None = None) -> Dataset:
     x["first_year"] = ~x.duplicated(["patient_id", "organism", "specimen", "year"])
     prev = x.groupby(["patient_id", "organism", "specimen"]).sample_date.shift()
     x["first_30d"] = prev.isna() | ((x.sample_date - prev).dt.days > 30)
-    for f in ["esbl", "mrsa", "vre", "cpe"]:
+    for f in FLAGS:
         x[f] = x[f].fillna(0).astype(int)
     return Dataset(isolates=x, cultures=cul, patients=pat)
 
@@ -82,3 +90,23 @@ def week_end(week: int) -> pd.Timestamp:
 
 def week_of(date) -> int:
     return int((pd.Timestamp(date) - pd.Timestamp(C.DATA_START)).days // 7)
+
+
+def to_json(obj):
+    """Plain Python types only: numpy scalars -> int/float, NaN/inf -> None, tuples -> lists, timestamps -> dates."""
+    if isinstance(obj, dict):
+        return {str(k): to_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [to_json(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return [to_json(v) for v in obj.tolist()]
+    if isinstance(obj, (bool, np.bool_)):
+        return bool(obj)
+    if isinstance(obj, (int, np.integer)):
+        return int(obj)
+    if isinstance(obj, (float, np.floating)):
+        f = float(obj)
+        return None if not np.isfinite(f) else f
+    if isinstance(obj, pd.Timestamp):
+        return obj.strftime("%Y-%m-%d")
+    return obj

@@ -14,17 +14,21 @@ ESBL P2. Heterogeneous: P2, "ranked lower by our rules (truth unknown)".
 
 Actions follow THL Ohjaus 2/2020: contact precautions for MRSA, VRE, CPE and ESBL K. pneumoniae carriers on wards
 (section 8.1.1), a risk assessment for other ESBL producers (8.1.1), screening of exposed patients (8.2.3), standard
-precautions at outpatient clinics with ward measures on admission (8.1.3), new MRSA strains to THL (5.2), and routine
+precautions at outpatient units with ward measures on admission (8.1.3), new MRSA strains to THL (5.2), and routine
 strain submission for carbapenemase E. coli, E. cloacae and K. pneumoniae, other species by prior agreement
-(appendix 1, 2.2.3).
+(appendix 1, 2.2.3). A unit is an outpatient unit by its `ward_type` (ED and primary care).
 """
+
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 from scipy import stats as st
 
+from .. import config as C
 from .. import signal as S
+from ..i18n import short_organism
+from . import explanations, iso, ts, ward_label
 from . import phenotype as ph
 
 KIND = "thl_rule"
@@ -37,30 +41,47 @@ HISTORY_DAYS = ph.HISTORY_DAYS
 SAME_PATTERN_SHARE = 0.75
 SOURCE = "THL Ohjaus 2/2020 (guidance, not legally binding); local infection-control rules apply"
 ROUTINE_CPE_STRAINS = {"Escherichia coli", "Enterobacter cloacae", "Klebsiella pneumoniae"}
-MRSA_ACTION = ("Contact precautions; screen exposed patients; new MRSA strains go to the THL reference lab (spa typing); "
-               "check ward overlap.")
+MRSA_STRAIN = "new MRSA strains go to the THL reference lab (spa typing)"
+MRSA_ACTION = f"Contact precautions; screen exposed patients; {MRSA_STRAIN}; check ward overlap."
 ESBL_KP_ACTION = "Contact precautions; screen exposed patients (same room or unit); check the past year on the unit."
-ESBL_ACTION = ("Standard precautions; contact precautions by risk assessment; epidemic check: same antibiogram? same "
-               "room or ward days?")
+ESBL_ACTION = (
+    "Standard precautions; contact precautions by risk assessment; epidemic check: same antibiogram? same room or ward "
+    "days?"
+)
+OUTPATIENT_MRSA_ACTION = f"Standard precautions at the outpatient unit; contact precautions if admitted; {MRSA_STRAIN}."
+OUTPATIENT_ESBL_ACTION = (
+    "Standard precautions at the outpatient unit; contact precautions if admitted, by risk assessment; epidemic check: "
+    "same antibiogram?"
+)
 
 
 def action_text(marker: str, organism: str, outpatient: bool = False) -> str:
-    """What THL guidance asks for, by marker and species (module docstring); no digits, as it is shown in card text."""
+    """What THL guidance asks for, by marker, species and unit type (module docstring); no digits, as it is shown in
+    card text."""
     if marker == "mrsa":
-        return MRSA_ACTION
+        return OUTPATIENT_MRSA_ACTION if outpatient else MRSA_ACTION
     if marker == "esbl":
+        if outpatient:
+            return OUTPATIENT_ESBL_ACTION
         return ESBL_KP_ACTION if organism == "Klebsiella pneumoniae" else ESBL_ACTION
     strain = "strain to the THL reference lab"
     if marker == "cpe" and organism not in ROUTINE_CPE_STRAINS:
         strain += " (agree in advance for this species)"
     if outpatient:
-        return (f"Flag as carrier; single room with own WC and contact precautions if admitted; look-back over the "
-                f"past year; {strain}.")
+        return (
+            f"Flag as carrier; single room with own WC and contact precautions if admitted; look-back over the "
+            f"past year; {strain}."
+        )
     return f"Single room with own WC, contact precautions, screen exposed patients, look-back over the past year; {strain}."
 
 
+def outpatient_unit(ds, ward: str) -> bool:
+    """ED and primary care: the data's ward_type is "out" (CONTRACTS.md section 1)."""
+    return bool((ds.isolates.loc[ds.isolates.ward_code == ward, "ward_type"] == "out").any())
+
+
 def _outpatient(r) -> bool:
-    return pd.isna(r.care_day_no)
+    return r.ward_type == "out"
 
 
 def _onset_label(r) -> str:
@@ -78,12 +99,17 @@ def _single_cases(ds, as_of, marker) -> pd.DataFrame:
 
 
 def _single_key(r, marker) -> dict:
-    return {"rule": marker, "ward": r.ward_code, "organism": r.organism, "first_sample_date": ph.iso(r.sample_date),
-            "isolate_id": r.isolate_id}
+    return {
+        "rule": marker,
+        "ward": r.ward_code,
+        "organism": r.organism,
+        "first_sample_date": iso(r.sample_date),
+        "isolate_id": r.isolate_id,
+    }
 
 
 def _single_items(ds, as_of, include_recent=False) -> list[tuple]:
-    as_of = ph.ts(as_of)
+    as_of = ts(as_of)
     lim = SINGLE_ACTIVE_DAYS + (ph.RESOLVED_LIST_DAYS if include_recent else 0)
     out = []
     for m in SINGLE_MARKERS:
@@ -96,33 +122,71 @@ def _single_items(ds, as_of, include_recent=False) -> list[tuple]:
     return out
 
 
-def _single_signal(m, r, prev, as_of, rule) -> dict:
+def _single_signal(m, r, prev, active, as_of, rule) -> dict:
     action = action_text(m, r.organism, outpatient=_outpatient(r))
-    slots = {"ward": r.ward_code, "ward_label": ph.ward_label(r.ward_code), "marker_label": ph.MARKER_LABELS[m],
-             "organism_label": ph.short_org(r.organism), "specimen": r.specimen, "sample_date": ph.iso(r.sample_date),
-             "onset_label": _onset_label(r), "action": action}
+    slots = {
+        "ward": r.ward_code,
+        "ward_label": ward_label(r.ward_code),
+        "marker_label": ph.MARKER_LABELS[m],
+        "organism_label": short_organism(r.organism),
+        "specimen": r.specimen,
+        "sample_date": iso(r.sample_date),
+        "onset_label": _onset_label(r),
+        "action": action,
+    }
     if prev is not None:
         slots["days_since_prev"] = int((r.sample_date - prev).days)
+    if active:
+        template_id = "ob_thl_single" if prev is not None else "ob_thl_single_first"
+    else:
+        template_id = "ob_thl_single_resolved"
+        slots.update(last_flagged=ph.last_flagged(as_of), active_weeks=SINGLE_ACTIVE_DAYS // 7)
     care_day = None if pd.isna(r.care_day_no) else int(r.care_day_no)
     evidence = {
-        "filter": {"ward": r.ward_code, "specimen": r.specimen, "organism": r.organism, "drug": None,
-                   "date_from": ph.iso(r.sample_date), "date_to": ph.iso(as_of), "rule": rule, "marker": m,
-                   "isolate_ids_only": True},
-        "counts": {"n_patients": 1, "care_day": care_day, "hospital_onset": bool(r.hosp_onset),
-                   "days_since_previous_case": slots.get("days_since_prev"),
-                   "previous_case_date": None if prev is None else ph.iso(prev)},
-        "method": f"THL guidance rule card: every {ph.MARKER_LABELS[m]} case (first {ph.MARKER_LABELS[m]} isolate of a patient)",
-        "params": {"active_days": SINGLE_ACTIVE_DAYS, "hospital_onset_min_care_day": 3},
+        "filter": {
+            "ward": r.ward_code,
+            "specimen": r.specimen,
+            "organism": r.organism,
+            "drug": None,
+            "date_from": iso(r.sample_date),
+            "date_to": iso(as_of),
+            "rule": rule,
+            "marker": m,
+            "isolate_ids_only": True,
+        },
+        "counts": {
+            "n_patients": 1,
+            "care_day": care_day,
+            "hospital_onset": bool(r.hosp_onset),
+            "days_since_previous_case": slots.get("days_since_prev"),
+            "previous_case_date": None if prev is None else iso(prev),
+        },
+        "method": (
+            f"THL guidance rule card: every {ph.MARKER_LABELS[m]} case (first {ph.MARKER_LABELS[m]} isolate of a patient)"
+        ),
+        "params": {"active_days": SINGLE_ACTIVE_DAYS, "hospital_onset_min_care_day": C.HOSPITAL_ONSET_MIN_CARE_DAY},
         "isolate_ids": [r.isolate_id],
         "action": action,
         "rank": ph.rank(m, [r.specimen], "strong"),
         "date_basis": ph.DATE_BASIS,
         "source": SOURCE,
     }
-    return S.make_signal(KIND, _single_key(r, m), priority="P1", as_of=ph.iso(as_of),
-                         template_id="ob_thl_single" if prev is not None else "ob_thl_single_first", slots=slots,
-                         evidence=evidence, ward=r.ward_code, home_area=r.home_area, specimen=r.specimen, organism=r.organism,
-                         first_sample_date=ph.iso(r.sample_date), section="unusual_patterns", advice=None)
+    return S.make_signal(
+        KIND,
+        _single_key(r, m),
+        priority="P1",
+        as_of=iso(as_of),
+        template_id=template_id,
+        slots=slots,
+        evidence=evidence,
+        ward=r.ward_code,
+        home_area=r.home_area,
+        specimen=r.specimen,
+        organism=r.organism,
+        first_sample_date=iso(r.sample_date),
+        section="unusual_patterns",
+        advice=None,
+    )
 
 
 # ----------------------------------------------------------------------------------------------- cluster checks
@@ -169,16 +233,30 @@ def cluster_episodes(ds, as_of) -> list[dict]:
         a = ep["alerts"][ep["alerts"].day <= d]
         if a.empty:
             continue
-        out.append({"ward": ep["ward"], "organism": ep["organism"], "marker": ep["marker"],
-                    "first_alert_day": int(a.day.iloc[0]), "last_alert_day": int(a.day.max()),
-                    "first_sample_day": int(a.first_day.iloc[0]), "n_alerts": len(a),
-                    "max_n_28d": int(a.n.max()), "min_p": float(a.p.min()), "last": a.iloc[-1].to_dict()})
+        out.append(
+            {
+                "ward": ep["ward"],
+                "organism": ep["organism"],
+                "marker": ep["marker"],
+                "first_alert_day": int(a.day.iloc[0]),
+                "last_alert_day": int(a.day.max()),
+                "first_sample_day": int(a.first_day.iloc[0]),
+                "n_alerts": len(a),
+                "max_n_28d": int(a.n.max()),
+                "min_p": float(a.p.min()),
+                "last": a.iloc[-1].to_dict(),
+            }
+        )
     return out
 
 
 def _cluster_key(ep) -> dict:
-    return {"rule": f"{ep['marker']}_same_unit", "ward": ep["ward"], "organism": ep["organism"],
-            "first_sample_date": ph.iso(ph.day_date(ep["first_sample_day"]))}
+    return {
+        "rule": f"{ep['marker']}_same_unit",
+        "ward": ep["ward"],
+        "organism": ep["organism"],
+        "first_sample_date": iso(ph.day_date(ep["first_sample_day"])),
+    }
 
 
 def _span(ep, as_of) -> tuple[int, int]:
@@ -229,79 +307,142 @@ def _cluster_summary(ds, ep, as_of) -> dict:
     x = ph.upto(ds.isolates, as_of)
     hist = ph.between(x, first - pd.Timedelta(days=HISTORY_DAYS), first - pd.Timedelta(days=1))
     hist = hist[(hist.ward_code == ep["ward"]) & (hist.organism == ep["organism"]) & (hist[ep["marker"]] == 1)]
-    days = (ph.ts(as_of) - first).days + 1
+    days = (ts(as_of) - first).days + 1
     mu = hist.patient_id.nunique() / HISTORY_DAYS * days
     lo, hi = ph.poisson_range(mu)
-    return {"first": first, "pop": pop, "n_patients": len(pats), "top_pattern": top.index[0], "n_share": int(top.iloc[0]),
-            "n_profiles": len(top), "profiles": {k: int(v) for k, v in top.items()}, "expected": mu, "usual_low": lo,
-            "usual_high": hi, "days": days, "specimens": sorted(pop.specimen.unique().tolist()),
-            "hosp_onset": int(pats.hosp_onset.sum())}
+    return {
+        "first": first,
+        "pop": pop,
+        "n_patients": len(pats),
+        "top_pattern": top.index[0],
+        "n_share": int(top.iloc[0]),
+        "n_profiles": len(top),
+        "profiles": {k: int(v) for k, v in top.items()},
+        "expected": mu,
+        "usual_low": lo,
+        "usual_high": hi,
+        "days": days,
+        "specimens": sorted(pop.specimen.unique().tolist()),
+        "hosp_onset": int(pats.hosp_onset.sum()),
+    }
 
 
 def _cluster_signal(ds, ep, as_of, rule) -> dict:
     sm = _cluster_summary(ds, ep, as_of)
     m = ep["marker"]
     same = sm["n_share"] / max(sm["n_patients"], 1) >= SAME_PATTERN_SHARE
-    slots = {"ward": ep["ward"], "ward_label": ph.ward_label(ep["ward"]), "organism_label": ph.organism_label(ep["organism"], m),
-             "n_patients": sm["n_patients"], "first_date": ph.iso(sm["first"]), "usual_low": sm["usual_low"],
-             "usual_high": sm["usual_high"]}
+    resolved = not ep["active"]
+    slots = {
+        "ward": ep["ward"],
+        "ward_label": ward_label(ep["ward"]),
+        "organism_label": ph.organism_label(ep["organism"], m),
+        "n_patients": sm["n_patients"],
+        "first_date": iso(sm["first"]),
+        "usual_low": sm["usual_low"],
+        "usual_high": sm["usual_high"],
+    }
     if same:
         slots.update({"n_share": sm["n_share"], "pattern": sm["top_pattern"]})
     else:
         slots["n_profiles"] = sm["n_profiles"]
-    ach = ph.competing_explanations(ds, ep["ward"], ep["organism"], sm["first"], as_of, marker=m)
+    if resolved:
+        template_id = "ob_thl_cluster_resolved"
+        slots.update(last_flagged=ph.last_flagged(as_of), last_alert=iso(ph.day_date(ep["last_alert_day"])))
+    else:
+        template_id = "ob_thl_cluster_same" if same else "ob_thl_cluster_mixed"
+    ach = explanations.competing_explanations(ds, ep["ward"], ep["organism"], sm["first"], as_of, marker=m)
     h1 = next((h["rating"] for h in ach["hypotheses"] if h["id"] == "H1"), "weak")
     from . import stepup
+
     evidence = {
-        "filter": {"ward": ep["ward"], "specimen": None, "organism": ep["organism"], "drug": None,
-                   "date_from": ph.iso(sm["first"]), "date_to": ph.iso(as_of), "rule": rule, "marker": m,
-                   "profile": sm["top_pattern"], "population": "marker"},
-        "counts": {"n_patients": sm["n_patients"], "n_share_top_pattern": sm["n_share"], "n_antibiograms": sm["n_profiles"],
-                   "patients_by_antibiogram": sm["profiles"], "hospital_onset_patients": sm["hosp_onset"],
-                   "expected_in_period": round(sm["expected"], 3), "period_days": sm["days"],
-                   "first_alert_date": ph.iso(ph.day_date(ep["first_alert_day"])),
-                   "last_alert_date": ph.iso(ph.day_date(ep["last_alert_day"])), "max_patients_28d": ep["max_n_28d"],
-                   "min_p": ep["min_p"], "specimens": sm["specimens"]},
-        "method": (f"THL guidance same-unit cluster check ({ph.MARKER_LABELS[m]}): distinct patients in 28 days vs the "
-                   "unit's prior 52 weeks, Poisson p < 1e-3, evaluated daily; identity shown as a qualifier"),
-        "params": {"window_days": WINDOW_DAYS, "history_days": HISTORY_DAYS, "min_patients": CLUSTER_MIN_PATIENTS[m],
-                   "alpha": CLUSTER_ALPHA, "same_pattern_share": SAME_PATTERN_SHARE, "episode_gap_days": ph.EPISODE_GAP_DAYS,
-                   "learning_days": ph.LEARN_DAYS},
+        "filter": {
+            "ward": ep["ward"],
+            "specimen": None,
+            "organism": ep["organism"],
+            "drug": None,
+            "date_from": iso(sm["first"]),
+            "date_to": iso(as_of),
+            "rule": rule,
+            "marker": m,
+            "profile": sm["top_pattern"],
+            "population": "marker",
+        },
+        "counts": {
+            "n_patients": sm["n_patients"],
+            "n_share_top_pattern": sm["n_share"],
+            "n_antibiograms": sm["n_profiles"],
+            "patients_by_antibiogram": sm["profiles"],
+            "hospital_onset_patients": sm["hosp_onset"],
+            "expected_in_period": round(sm["expected"], 3),
+            "period_days": sm["days"],
+            "first_alert_date": iso(ph.day_date(ep["first_alert_day"])),
+            "last_alert_date": iso(ph.day_date(ep["last_alert_day"])),
+            "max_patients_28d": ep["max_n_28d"],
+            "min_p": ep["min_p"],
+            "specimens": sm["specimens"],
+        },
+        "method": (
+            f"THL guidance same-unit cluster check ({ph.MARKER_LABELS[m]}): distinct patients in 28 days vs the "
+            "unit's prior 52 weeks, Poisson p < 1e-3, evaluated daily; identity shown as a qualifier"
+        ),
+        "params": {
+            "window_days": WINDOW_DAYS,
+            "history_days": HISTORY_DAYS,
+            "min_patients": CLUSTER_MIN_PATIENTS[m],
+            "alpha": CLUSTER_ALPHA,
+            "same_pattern_share": SAME_PATTERN_SHARE,
+            "episode_gap_days": ph.EPISODE_GAP_DAYS,
+            "learning_days": ph.LEARN_DAYS,
+        },
         "isolate_ids": sm["pop"].isolate_id.tolist(),
         "competing_explanations": ach,
         "stepup": stepup.evidence_for(ds, as_of, ep["ward"], m),
-        "action": action_text(m, ep["organism"]),
+        "action": action_text(m, ep["organism"], outpatient=outpatient_unit(ds, ep["ward"])),
         "rank": ph.rank(m, sm["specimens"], h1),
         "date_basis": ph.DATE_BASIS,
         "source": SOURCE,
     }
     if not same:
-        evidence["label"] = (f"heterogeneous: {sm['n_profiles']} antibiograms, ranked lower by our rules (truth unknown)")
-    return S.make_signal(KIND, _cluster_key(ep), priority="P1" if (same and m == "mrsa") else "P2", as_of=ph.iso(as_of),
-                         template_id="ob_thl_cluster_same" if same else "ob_thl_cluster_mixed", slots=slots,
-                         evidence=evidence, ward=ep["ward"], organism=ep["organism"],
-                         specimen=sm["specimens"][0] if len(sm["specimens"]) == 1 else None,
-                         first_sample_date=ph.iso(sm["first"]), section="unusual_patterns",
-                         advice="Typing advised" if same else None)
+        evidence["label"] = f"heterogeneous: {sm['n_profiles']} antibiograms, ranked lower by our rules (truth unknown)"
+    return S.make_signal(
+        KIND,
+        _cluster_key(ep),
+        priority="P1" if (same and m == "mrsa") else "P2",
+        as_of=iso(as_of),
+        template_id=template_id,
+        slots=slots,
+        evidence=evidence,
+        ward=ep["ward"],
+        organism=ep["organism"],
+        specimen=sm["specimens"][0] if len(sm["specimens"]) == 1 else None,
+        first_sample_date=iso(sm["first"]),
+        section="unusual_patterns",
+        advice="Typing advised" if same and not resolved else None,
+    )
 
 
 def cover_for(ds, as_of, ward, organism, marker, since=None) -> dict | None:
     """The same-unit THL cluster check that a phenotype cluster absorbs (attached as evidence.thl_rule), if any."""
     if marker not in CLUSTER_MIN_PATIENTS:
         return None
-    lo = ph.day_no(since) if since is not None else -10**9
+    lo = ph.day_no(since) if since is not None else -(10**9)
     best = None
     for ep in cluster_episodes(ds, as_of):
         if (ep["ward"], ep["organism"], ep["marker"]) == (ward, organism, marker) and _span(ep, as_of)[1] >= lo:
             best = ep
     if best is None:
         return None
-    return {"rule": f"{marker}_same_unit", "text": "THL guidance: epidemic check (several findings above the usual level on one unit)",
-            "first_alert_date": ph.iso(ph.day_date(best["first_alert_day"])),
-            "last_alert_date": ph.iso(ph.day_date(best["last_alert_day"])),
-            "first_sample_date": ph.iso(ph.day_date(best["first_sample_day"])), "max_patients_28d": best["max_n_28d"],
-            "min_p": best["min_p"], "action": action_text(marker, organism),
-            "note": "Shown with the phenotype cluster instead of as a separate card."}
+    return {
+        "rule": f"{marker}_same_unit",
+        "text": "THL guidance: epidemic check (several findings above the usual level on one unit)",
+        "first_alert_date": iso(ph.day_date(best["first_alert_day"])),
+        "last_alert_date": iso(ph.day_date(best["last_alert_day"])),
+        "first_sample_date": iso(ph.day_date(best["first_sample_day"])),
+        "max_patients_28d": best["max_n_28d"],
+        "min_p": best["min_p"],
+        "action": action_text(marker, organism, outpatient=outpatient_unit(ds, ward)),
+        "note": "Shown with the phenotype cluster instead of as a separate card.",
+    }
 
 
 # ----------------------------------------------------------------------------------------------- detect
@@ -313,11 +454,11 @@ def _active_ids(ds, as_of) -> set:
 
 def detect(ds, as_of, rule="readme_period") -> list[dict]:
     ph.check_rule(rule)
-    as_of = ph.ts(as_of)
+    as_of = ts(as_of)
     prev_ids = _active_ids(ds, as_of - pd.Timedelta(days=7))
     now, resolved = [], []
     for m, r, prev, active in _single_items(ds, as_of, include_recent=True):
-        (now if active else resolved).append(_single_signal(m, r, prev, as_of, rule))
+        (now if active else resolved).append(_single_signal(m, r, prev, active, as_of, rule))
     for ep in active_clusters(ds, as_of, include_recent=True):
         (now if ep["active"] else resolved).append(_cluster_signal(ds, ep, as_of, rule))
     return ph.finish(now, prev_ids, resolved)

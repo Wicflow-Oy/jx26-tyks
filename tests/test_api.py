@@ -1,9 +1,10 @@
 """The HTTP API end to end (offline): as-of handling, the brief and case file, per-session alerts and heads-ups, the
 order screen and CDS Hooks, write and rate limits, and the public-demo headers."""
+
 import pytest
 from fastapi.testclient import TestClient
 
-from aei import api, brief, cds, data, precompute, store, views
+from aei import api, brief, cds, cds_hooks, data, precompute, store, views
 from aei import config as C
 
 A, B = "judge-aaaa-0001", "judge-bbbb-0002"
@@ -36,8 +37,14 @@ def items(brief_json):
 
 
 def approve(client, headers=None, **body):
-    payload = {"signal_id": ICU_CLUSTER, "as_of": "2026-03-29", "wards": ["ICU"], "drugs": ["CXM", "CRO"],
-               "message": "Possible MRSA cluster, ICU. Typing advised.", **body}
+    payload = {
+        "signal_id": ICU_CLUSTER,
+        "as_of": "2026-03-29",
+        "wards": ["ICU"],
+        "drugs": ["CXM", "CRO"],
+        "message": "Possible MRSA cluster, ICU. Typing advised.",
+        **body,
+    }
     return client.post("/api/alerts", json=payload, headers=headers)
 
 
@@ -53,15 +60,23 @@ def test_meta(client):
     assert m["replay"] == {"first": "2024-10-27", "last": C.DATA_END}
     assert m["demo_mondays"] == C.DEMO_MONDAYS and m["second_opinion"] == "not_configured"
     assert {w["code"] for w in m["wards"]} == set(C.WARD_LABELS) and m["narrator"] == "template"
+    assert m["tour_start_as_of"] == C.TOUR_START_AS_OF and [i["key"] for i in m["indications"]] == list(C.INDICATIONS)
+    assert m["cds_hooks"]["discovery"] == "/cds-services" and "no EHR is connected" in m["cds_hooks"]["note"]
 
 
 def test_health_never_contains_a_key(client, monkeypatch):
     secret = "sk-ant-test-not-a-real-key-0123456789"
     monkeypatch.setenv("ANTHROPIC_API_KEY", secret)
     r = client.get("/api/health")
-    assert r.json() | {"spend_today_usd": 0} == {"ok": True, "app_name": C.APP_NAME, "data_loaded": True,
-                                                 "narrator": "template", "key_set": True, "spend_today_usd": 0,
-                                                 "cap_usd": C.DAILY_SPEND_USD}
+    assert r.json() | {"spend_today_usd": 0} == {
+        "ok": True,
+        "app_name": C.APP_NAME,
+        "data_loaded": True,
+        "narrator": "template",
+        "key_set": True,
+        "spend_today_usd": 0,
+        "cap_usd": C.DAILY_SPEND_USD,
+    }
     for path in ("/api/health", "/api/meta"):
         assert secret not in client.get(path).text
 
@@ -133,8 +148,13 @@ def test_writes_need_a_session_and_a_reader_without_one_sees_the_seeds_only(clie
     assert revoke.status_code == 400 and C.SESSION_HEADER in revoke.json()["message"]
     assert approve(anon).status_code == 400
     assert anon.post("/api/heads-up", json={"signal_id": ICU_CLUSTER, "as_of": "2026-03-29"}).status_code == 400
-    shown = {"as_of": "2026-03-15", "card_key": "card-1", "source_id": "own_history", "state": "warning",
-             "outcome": "shown"}
+    shown = {
+        "as_of": "2026-03-15",
+        "card_key": "card-1",
+        "source_id": "own_history",
+        "state": "warning",
+        "outcome": "shown",
+    }
     assert anon.post("/api/order-feedback", json=shown).status_code == 400
 
     mine = approve(client, as_of="2026-03-15").json()["id"]
@@ -144,14 +164,17 @@ def test_writes_need_a_session_and_a_reader_without_one_sees_the_seeds_only(clie
     assert got == {k: s["expect"] for k, s in SCENARIOS.items()}  # the refused revoke changed nothing
 
 
-@pytest.mark.parametrize("query, message", [
-    ("as_of=2026-03-25", "must be a Sunday"),
-    ("as_of=yesterday", "must be a date"),
-    ("monday=2026-03-08", "must be a Monday"),
-    ("as_of=2024-10-20", "replay range"),
-    ("as_of=2026-10-04", "replay range"),
-    ("as_of=2026-03-29&monday=2026-03-30", "not both"),
-])
+@pytest.mark.parametrize(
+    "query, message",
+    [
+        ("as_of=2026-03-25", "must be a Sunday"),
+        ("as_of=yesterday", "must be a date"),
+        ("monday=2026-03-08", "must be a Monday"),
+        ("as_of=2024-10-20", "replay range"),
+        ("as_of=2026-10-04", "replay range"),
+        ("as_of=2026-03-29&monday=2026-03-30", "not both"),
+    ],
+)
 def test_bad_as_of_is_a_clear_400(client, query, message):
     r = client.get(f"/api/brief?{query}")
     assert r.status_code == 400 and message in r.json()["message"]
@@ -165,6 +188,8 @@ def test_brief_has_the_icu_mrsa_p1(client):
     assert (p1["priority"], p1["ward"], p1["kind"]) == ("P1", "ICU", "phenotype_cluster")
     assert all("alert" in i and "heads_up" in i for i in items(b).values())
     assert client.get("/api/brief?monday=2026-03-30").json()["counts"] == b["counts"]
+    [line] = b["policy_states"]  # the policy section has its line even in a week it is not crossed
+    assert (line["id"], line["active"], line["as_of"]) == ("tmp_uti_women_20", False, "2026-03-29")
 
 
 def test_demo_monday_brief_links_the_seeded_alert(client):
@@ -190,6 +215,19 @@ def test_my_ward_shows_the_trimethoprim_line_on_urine_views_only(client):
     assert banners("blood_wound") == banners("wound") == []  # the line is about urinary E. coli (my-ward #3)
 
 
+def test_my_ward_never_names_another_drug(client):
+    """Re-verification #1, the 18 Oct decision: the trimethoprim line flags trimethoprim and names no alternative."""
+    for lang in ("en", "fi"):
+        view = client.get(f"/api/my-ward?as_of=2026-06-21&ward=PHC-N&specimen=urine&lang={lang}").json()
+        [line] = [s for s in view["signals"] if s["kind"] == "policy_line"]
+        assert "alternative" not in line["slots"]
+        for text in [line["text"], *(b["text"] for b in view["banners"])]:
+            assert not {"pivmecillinam", "pivmesillinaami", "mecillinam", "alternative", "vaihtoehto"} & set(
+                text.lower().replace(".", " ").replace(":", " ").split()
+            ), text
+    assert "local_guide_alternative" not in client.get("/api/brief?as_of=2026-06-21").json()["policy_states"][0]
+
+
 def test_replay_weeks_cover_the_range_and_use_precomputed_counts(client, ds):
     weeks = client.get("/api/replay/weeks").json()
     assert (weeks[0]["as_of"], weeks[-1]["as_of"]) == ("2024-10-27", C.DATA_END) and len(weeks) == 101
@@ -209,7 +247,11 @@ def test_case_file(client):
     assert (curve[0]["date"], curve[-1]["date"], sum(d["n"] for d in curve)) == ("2026-03-03", "2026-03-29", 13)
     assert [s["kind"] for s in f["seen_before"]] == ["seen_before"]
     assert f["seen_before"][0]["slots"]["n_elsewhere"] == 11
-    assert f["stepup"]["positive"] is True and f["alerts"] == [] and f["heads_ups"] == []
+    assert f["stepup"]["positive"] is True and f["heads_ups"] == []
+    # the timeline keeps the seed approved 9 Mar after it lapsed on 23 Mar
+    assert [(a["id"], a["approved_on"], a["expires_on"], a["expired"]) for a in f["alerts"]] == [
+        ("seed-icu-mrsa-2026", "2026-03-09", "2026-03-23", True)
+    ]
 
 
 def test_case_file_is_strictly_as_of(client):
@@ -228,8 +270,11 @@ def test_approved_alert_reaches_brief_my_ward_and_orders_for_that_session_only(c
     r = approve(client)
     assert r.status_code == 201
     alert = r.json()
-    assert (alert["approved_on"], alert["organism"], alert["signal_id"]) == ("2026-03-30", "Staphylococcus aureus",
-                                                                              ICU_CLUSTER)
+    assert (alert["approved_on"], alert["organism"], alert["signal_id"]) == (
+        "2026-03-30",
+        "Staphylococcus aureus",
+        ICU_CLUSTER,
+    )
     assert [a["id"] for a in client.get("/api/alerts?as_of=2026-03-29").json()] == [alert["id"]]
     assert client.get("/api/alerts?as_of=2026-03-29", headers=AS_B).json() == []
     assert client.get("/api/alerts?as_of=2026-03-22").json()[0]["id"] == "seed-icu-mrsa-2026"  # strict as-of
@@ -248,14 +293,32 @@ def test_approved_alert_reaches_brief_my_ward_and_orders_for_that_session_only(c
     assert revoked["revoked_on"] == "2026-03-30"
     assert client.get("/api/alerts?as_of=2026-03-29").json() == []
     assert order(client).json()["state"] != "warning"
+    timeline = client.get("/api/alerts?as_of=2026-03-29&include_expired=1").json()
+    assert [(a["id"], a["expired"], a["revoked_on"]) for a in timeline] == [
+        ("seed-uro-esbl-2025", True, None),
+        ("seed-icu-mrsa-2026", True, None),
+        (alert["id"], False, "2026-03-30"),
+    ]
 
 
-@pytest.mark.parametrize("signal_id, as_of, seed_id", [(ICU_CLUSTER, "2026-03-08", "seed-icu-mrsa-2026"),
-                                                        (URO_CLUSTER, "2025-06-08", "seed-uro-esbl-2025")])
+def test_an_alert_scoped_to_indications_is_a_notice_for_the_others(client):
+    alert = approve(client, indications=["bloodstream"]).json()
+    assert alert["indications"] == ["bloodstream"]
+    assert order(client, indication="bloodstream").json()["state"] == "warning"
+    wound = order(client).json()
+    assert (wound["state"], wound["source"]["id"]) == ("notice", alert["id"])
+    assert approve(client, indications=["pneumonia"]).status_code == 400
+
+
+@pytest.mark.parametrize(
+    "signal_id, as_of, seed_id",
+    [(ICU_CLUSTER, "2026-03-08", "seed-icu-mrsa-2026"), (URO_CLUSTER, "2025-06-08", "seed-uro-esbl-2025")],
+)
 def test_an_approved_cluster_alert_keeps_its_antibiogram_like_the_seed(client, signal_id, as_of, seed_id):
     alert = approve(client, signal_id=signal_id, as_of=as_of, wards=[]).json()
     seed = next(a for a in client.get(f"/api/alerts?as_of={as_of}").json() if a["id"] == seed_id)
-    assert alert["resistant_to"] == seed["resistant_to"] and alert["wards"] == seed["wards"]
+    for key in ("resistant_to", "wards", "profile", "marker"):
+        assert alert[key] == seed[key], key
 
 
 def test_alert_needs_a_signal_that_exists_then(client):
@@ -265,8 +328,12 @@ def test_alert_needs_a_signal_that_exists_then(client):
 
 
 def test_alert_input_is_checked(client):
-    for change in ({"expires_on": "9999-12-31"}, {"approved_by_role": "ward_doctor"}, {"message": "MRSA\u202e"},
-                   {"message": "MRSA\x00"}):
+    for change in (
+        {"expires_on": "9999-12-31"},
+        {"approved_by_role": "ward_doctor"},
+        {"message": "MRSA\u202e"},
+        {"message": "MRSA\x00"},
+    ):
         r = approve(client, **change)
         assert r.status_code == 400 and r.json()["error"] == "bad_request", change
     assert approve(client, wards=["ICU", "ICU"]).json()["wards"] == ["ICU"]
@@ -287,7 +354,11 @@ def test_heads_up_is_drafted_approved_and_never_sent(client):
     assert r.status_code == 201
     draft = r.json()
     assert (draft["status"], draft["audience"], draft["delivery"]) == ("draft", "ed", store.NOT_SENT)
-    assert "ICU" in draft["text"] and draft["validated"] is True
+    assert draft["validated"] is True and draft["text"] == (
+        "Heads-up from infection control: possible MRSA cluster on Intensive care unit (ICU). 13 patients since 3 Mar; "
+        "12 of 13 share one antibiogram: cefoxitin R, vancomycin S, clindamycin R. Under investigation; typing "
+        "advised. Dates are sample dates."
+    )  # drug names, never panel codes such as FOX:R
     approved = client.post(f"/api/heads-up/{draft['id']}/approve").json()
     assert (approved["status"], approved["delivery"]) == ("approved", "not sent (demo)")
     assert items(client.get("/api/brief?as_of=2026-03-29").json())[ICU_CLUSTER]["heads_up"]["status"] == "approved"
@@ -335,8 +406,8 @@ def test_demo_scenarios_carry_their_state(client):
 def test_order_drugs_per_indication(client):
     uti = {d["drug"] for d in client.get("/api/order-drugs?indication=uti").json()}
     wound = {d["drug"] for d in client.get("/api/order-drugs?indication=wound").json()}
-    assert {"MEC", "NIT", "TMP"} <= uti and not {"VAN", "CLI"} & uti  # Enterobacterales are intrinsically R
-    assert not C.URINE_ONLY & wound
+    assert uti == {d for d, _, _ in C.ORDER_DRUGS}  # every order drug has reported urine results
+    assert wound == uti - C.URINE_ONLY
     assert client.get("/api/order-drugs?indication=nope").status_code == 422
 
 
@@ -352,9 +423,10 @@ def test_order_feedback_summary(client):
     shown = {"as_of": "2026-03-15", "card_key": "card-1", "source_id": "own_history", "state": "warning"}
     assert client.post("/api/order-feedback", json={**shown, "outcome": "shown"}).json()["logged"] is True
     assert client.post("/api/order-feedback", json={**shown, "outcome": "shown"}).json()["logged"] is False
+    client.post("/api/order-feedback", json={**shown, "outcome": "edit"})
     client.post("/api/order-feedback", json={**shown, "outcome": "change", "changed_to": "NIT"})
     summary = client.get("/api/order-feedback/summary?as_of=2026-03-15").json()
-    assert summary[0]["text"] == "shown 1 time, changed 1"
+    assert summary[0]["text"] == "shown 1 time, changed 1" and summary[0]["edited"] == 1
     assert client.get("/api/feedback?as_of=2026-03-15").json() == summary
     assert client.get("/api/order-feedback/summary?as_of=2026-03-15", headers=AS_B).json() == []
 
@@ -363,14 +435,29 @@ def test_order_feedback_summary(client):
 def hook_request(hook, scenario="ed-own-history"):
     s = SCENARIOS[scenario]
     atc = next(a for d, _, a in C.ORDER_DRUGS if d == s["drug"])
-    medication = {"resourceType": "MedicationRequest", "id": "mr-1", "status": "draft", "intent": "order",
-                  "medicationCodeableConcept": {"coding": [{"system": cds.ATC_SYSTEM, "code": atc}]}}
-    return {"hookInstance": "d1577c69-dfbe-44ad-ba6d-3e05e953b2ea", "hook": hook,
-            "context": {"userId": "Practitioner/1", "patientId": s["patient_id"], "encounterId": "Encounter/1",
-                        "selections": ["MedicationRequest/mr-1"],
-                        "draftOrders": {"resourceType": "Bundle", "entry": [{"resource": medication}]},
-                        "extension": {f"{cds.SLUG}.unit": s["unit"], f"{cds.SLUG}.indication": s["indication"],
-                                      f"{cds.SLUG}.as_of": s["as_of"]}}}
+    medication = {
+        "resourceType": "MedicationRequest",
+        "id": "mr-1",
+        "status": "draft",
+        "intent": "order",
+        "medicationCodeableConcept": {"coding": [{"system": cds_hooks.ATC_SYSTEM, "code": atc}]},
+    }
+    return {
+        "hookInstance": "d1577c69-dfbe-44ad-ba6d-3e05e953b2ea",
+        "hook": hook,
+        "context": {
+            "userId": "Practitioner/1",
+            "patientId": s["patient_id"],
+            "encounterId": "Encounter/1",
+            "selections": ["MedicationRequest/mr-1"],
+            "draftOrders": {"resourceType": "Bundle", "entry": [{"resource": medication}]},
+            "extension": {
+                f"{cds.SLUG}.unit": s["unit"],
+                f"{cds.SLUG}.indication": s["indication"],
+                f"{cds.SLUG}.as_of": s["as_of"],
+            },
+        },
+    }
 
 
 def test_cds_discovery_and_an_order_sign_warning(client):
@@ -379,13 +466,21 @@ def test_cds_discovery_and_an_order_sign_warning(client):
     cards = client.post(f"/cds-services/{services['order-sign']}", json=hook_request("order-sign")).json()["cards"]
     assert [c["indicator"] for c in cards] == ["warning"]
     assert all(link["url"].startswith("http://testserver/") for link in cards[0]["links"])
-    assert [link["label"] for link in cards[0]["links"]] == ["Details"]  # no SMART launch in the demo (audit #11)
+    assert [link["label"] for link in cards[0]["links"]] == [cds.DETAILS_LABEL]  # no SMART launch (audit #11)
+    assert "suggestions" not in cards[0]  # the card never names another drug
     select = client.post(f"/cds-services/{services['order-select']}", json=hook_request("order-select")).json()
     assert [c["indicator"] for c in select["cards"]] == ["info"]
 
-    feedback = {"feedback": [{"card": cards[0]["uuid"], "outcome": "overridden",
-                              "overrideReason": {"reason": {"code": "keep"}, "userComment": "free text, dropped"},
-                              "outcomeTimestamp": "2026-03-15T10:00:00Z"}]}
+    feedback = {
+        "feedback": [
+            {
+                "card": cards[0]["uuid"],
+                "outcome": "overridden",
+                "overrideReason": {"reason": {"code": "keep"}, "userComment": "free text, dropped"},
+                "outcomeTimestamp": "2026-03-15T10:00:00Z",
+            }
+        ]
+    }
     assert client.post(f"/cds-services/{services['order-sign']}/feedback", json=feedback).json() == {"logged": 1}
     summary = client.get("/api/order-feedback/summary?as_of=2026-03-15").json()
     own = next(s for s in summary if s["source_id"] == "own_history")
@@ -394,23 +489,29 @@ def test_cds_discovery_and_an_order_sign_warning(client):
 
 def test_cds_without_a_session_is_logged_but_changes_nothing(client):
     anon = TestClient(api.app)  # an EHR sends no X-Demo-Session
-    sign = next(s["id"] for s in cds.SERVICES if s["hook"] == "order-sign")
+    sign = next(s["id"] for s in cds_hooks.SERVICES if s["hook"] == "order-sign")
     cards = anon.post(f"/cds-services/{sign}", json=hook_request("order-sign", "uro-esbl")).json()["cards"]
     assert [(c["indicator"], c["extension"][f"{cds.SLUG}.source"]["id"]) for c in cards] == [
-        ("warning", "seed-uro-esbl-2025")]
-    feedback = {"feedback": [{"card": cards[0]["uuid"], "outcome": "overridden",
-                              "overrideReason": {"reason": {"code": "keep"}}}]}
+        ("warning", "seed-uro-esbl-2025")
+    ]
+    feedback = {
+        "feedback": [
+            {"card": cards[0]["uuid"], "outcome": "overridden", "overrideReason": {"reason": {"code": "keep"}}}
+        ]
+    }
     assert anon.post(f"/cds-services/{sign}/feedback", json=feedback).json() == {"logged": 1}
     [logged] = store.feedback_summary(store.ANONYMOUS, "2025-06-15")
     assert (logged["shown"], logged["kept"]) == (1, 1)
-    assert anon.get("/api/feedback?as_of=2025-06-15").json() == client.get("/api/feedback?as_of=2025-06-15").json() == []
+    assert (
+        anon.get("/api/feedback?as_of=2025-06-15").json() == client.get("/api/feedback?as_of=2025-06-15").json() == []
+    )
     again = anon.post(f"/cds-services/{sign}", json=hook_request("order-sign", "uro-esbl")).json()["cards"]
     assert [c["indicator"] for c in again] == ["warning"]
 
 
 def test_cds_errors(client):
     assert client.post("/cds-services/nope", json=hook_request("order-sign")).status_code == 404
-    sign = next(s["id"] for s in cds.SERVICES if s["hook"] == "order-sign")
+    sign = next(s["id"] for s in cds_hooks.SERVICES if s["hook"] == "order-sign")
     assert client.post(f"/cds-services/{sign}", json=hook_request("order-select")).status_code == 422
     assert client.post(f"/cds-services/{sign}", json={"hook": "order-sign"}).status_code == 422
     listed = hook_request("order-sign")

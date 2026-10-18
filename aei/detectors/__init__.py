@@ -3,11 +3,14 @@
 `DETECTORS` lists module names inside `aei.detectors`. Each module exposes
 `detect(ds, as_of, rule="readme_period") -> list[signal]` (strictly as-of). Modules are imported lazily; a missing
 module, an import error or an exception inside `detect` is logged once as a warning and that detector is skipped.
+Every signal that passes through `run` gets a `title`: a short row title rendered from its template's `title` and its
+slots, so the UI never parses `text` for one.
 
 Optional keyword arguments are passed only when a detector's signature accepts them:
   window  -- the brief window key ("4w"), for detectors with a window length;
   signals -- the signals produced so far this run (so `seen_before` can look at active clusters).
 """
+
 import importlib
 import inspect
 import logging
@@ -15,16 +18,35 @@ import logging
 import pandas as pd
 
 from .. import config as C
+from ..render import render
+from ..templates import TEMPLATES
 
 log = logging.getLogger(__name__)
 
 # Order matters: seen_before runs after the cluster detectors so it can read their signals.
-DETECTORS = ["phenotype", "thl", "stepup", "seen_before",
-             "resistance_change", "outlier", "policy", "expert_rules", "completeness"]
+DETECTORS = [
+    "phenotype",
+    "thl",
+    "stepup",
+    "seen_before",
+    "resistance_change",
+    "outlier",
+    "policy",
+    "expert_rules",
+    "completeness",
+]
 
-KIND_SECTION = {"phenotype_cluster": "unusual_patterns", "thl_rule": "unusual_patterns", "count_stepup": "unusual_patterns",
-                "ward_outlier": "changed", "resistance_change": "changed", "policy_line": "policy",
-                "seen_before": "seen_before", "expert_rule": "data_quality", "completeness": "data_quality"}
+KIND_SECTION = {
+    "phenotype_cluster": "unusual_patterns",
+    "thl_rule": "unusual_patterns",
+    "count_stepup": "unusual_patterns",
+    "ward_outlier": "changed",
+    "resistance_change": "changed",
+    "policy_line": "policy",
+    "seen_before": "seen_before",
+    "expert_rule": "data_quality",
+    "completeness": "data_quality",
+}
 
 _MODULES: dict = {}
 _WARNED: set = set()
@@ -60,10 +82,17 @@ def _valid(sig) -> bool:
     return isinstance(sig, dict) and all(k in sig for k in ("id", "kind", "priority", "text", "slots", "evidence"))
 
 
+def with_title(s: dict) -> dict:
+    """Set s["title"] from the template's title and the signal's slots (numbers only via slots, like the text)."""
+    t = TEMPLATES[s["template_id"]]
+    s["title"] = render(t["title"], s["slots"], t.get("formats"))
+    return s
+
+
 def run(ds, as_of, rule: str = "readme_period", window: str = "4w", names=None) -> tuple[list[dict], dict]:
     """Run every registered detector for one as-of date. Returns (signals, report{"ran", "skipped"})."""
     signals, ran, skipped, seen = [], [], [], set()
-    for name in (DETECTORS if names is None else names):
+    for name in DETECTORS if names is None else names:
         mod = load(name)
         if mod is None:
             skipped.append({"name": name, "reason": "not available"})
@@ -90,11 +119,11 @@ def run(ds, as_of, rule: str = "readme_period", window: str = "4w", names=None) 
             seen.add(s["id"])
             if not s.get("section"):
                 s["section"] = KIND_SECTION.get(s["kind"], "unusual_patterns")
-            signals.append(s)
+            signals.append(with_title(s))
     return signals, {"ran": ran, "skipped": skipped}
 
 
-# ---- small shared helpers for the trend detectors (labels, dates, JSON-safe values) ----
+# ---- small shared helpers for the detectors (dates, labels) ----
 
 _DS_REFS: dict = {}
 
@@ -110,7 +139,8 @@ def ts(as_of) -> pd.Timestamp:
     return pd.Timestamp(str(as_of)[:10])
 
 
-def day(as_of) -> str:
+def iso(as_of) -> str:
+    """'2026-03-29' for a date, a timestamp or a date string."""
     return str(ts(as_of).date())
 
 
@@ -122,27 +152,5 @@ def drug_label(code: str) -> str:
     return C.DRUG_NAMES.get(code, code)
 
 
-def organism_label(org: str) -> str:
-    """'Escherichia coli' -> 'E. coli' (genus initial + species)."""
-    parts = str(org).split()
-    return f"{parts[0][0]}. {' '.join(parts[1:])}" if len(parts) >= 2 else str(org)
-
-
 def window_days(window: str) -> int:
     return int(C.WINDOWS.get(window, C.WINDOWS["4w"]))
-
-
-def plain(v):
-    """Convert numpy/pandas scalars to plain Python so signals serialise to JSON."""
-    if isinstance(v, dict):
-        return {str(k): plain(x) for k, x in v.items()}
-    if isinstance(v, (list, tuple)):
-        return [plain(x) for x in v]
-    if isinstance(v, pd.Timestamp):
-        return str(v.date())
-    if hasattr(v, "item") and not isinstance(v, (str, bytes)):
-        try:
-            return v.item()
-        except (ValueError, AttributeError):
-            return v
-    return v

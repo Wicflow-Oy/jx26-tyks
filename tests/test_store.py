@@ -1,5 +1,6 @@
 """Demo state: per-session isolation, shared seeds, the write cap, strict as-of visibility, revocation, alert input
 checks, audit."""
+
 import sqlite3
 
 import pytest
@@ -19,8 +20,14 @@ def db(tmp_path, monkeypatch):
 
 
 def _approve(session, as_of="2026-03-08", **kw):
-    args = {"signal_id": "phe-1a2b3c4d5e", "as_of": as_of, "wards": ["ICU"], "drugs": ["MEM"],
-            "message": "Possible cluster, ICU. Typing advised.", **kw}
+    args = {
+        "signal_id": "phe-1a2b3c4d5e",
+        "as_of": as_of,
+        "wards": ["ICU"],
+        "drugs": ["MEM"],
+        "message": "Possible cluster, ICU. Typing advised.",
+        **kw,
+    }
     return store.approve_alert(session, **args)
 
 
@@ -37,6 +44,9 @@ def test_seeds_are_visible_to_every_session_and_seeding_is_idempotent():
     assert all(a["seed"] and a["approved_by_role"] == "Infection control" for a in store.alerts(A))
     for seed, stored in zip(C.DEMO_ALERT_SEEDS, store.alerts(A), strict=True):
         assert set(stored["resistant_to"]) == set(seed["resistant_to"]) and set(stored["drugs"]) == set(seed["drugs"])
+        assert {k: stored[k] for k in ("indications", "marker", "profile")} == {
+            k: seed[k] for k in ("indications", "marker", "profile")
+        }
 
 
 def test_sessions_do_not_see_each_others_rows():
@@ -79,6 +89,26 @@ def test_revoking_a_seed_hides_it_for_that_session_from_that_brief_on():
     assert _active(A, "2026-03-08") == []
 
 
+def test_alerts_read_at_a_date_include_expired_ones_on_request_and_hide_later_revocations():
+    mine = _approve(A, indications=["wound", "bloodstream"])  # from the brief of 9 Mar, expires 23 Mar
+    assert mine["indications"] == ["bloodstream", "wound"]  # config order
+    store.revoke_alert(A, mine["id"], "2026-03-15")  # from the brief of 16 Mar
+
+    def seen(as_of, **kw):
+        return {a["id"]: (a["expired"], a["revoked_on"]) for a in store.alerts(A, as_of, **kw)}
+
+    assert seen("2026-03-08") == {"seed-icu-mrsa-2026": (False, None), mine["id"]: (False, None)}  # revoked later
+    assert seen("2026-03-15") == {"seed-icu-mrsa-2026": (False, None)}
+    assert seen("2026-03-29", include_expired=True) == {
+        "seed-uro-esbl-2025": (True, None),
+        "seed-icu-mrsa-2026": (True, None),
+        mine["id"]: (True, "2026-03-16"),
+    }
+    assert seen("2025-06-01", include_expired=True) == {}  # nothing approved yet
+    with pytest.raises(ValueError, match="indications"):
+        _approve(A, indications=["pneumonia"])
+
+
 def test_only_an_alert_active_at_that_brief_can_be_revoked():
     mine = _approve(A, as_of="2026-03-29")["id"]  # approved 30 Mar, expires 13 Apr
     for before_or_after in ("2026-03-08", "2026-04-26"):
@@ -119,8 +149,9 @@ def test_reset_leaves_other_tables_alone(db):
 
 
 def test_heads_up_is_drafted_approved_and_never_sent():
-    h = store.draft_heads_up(A, signal_id="phe-1a2b3c4d5e", as_of="2026-03-08", text="Heads-up for the ED.",
-                             provider="template")
+    h = store.draft_heads_up(
+        A, signal_id="phe-1a2b3c4d5e", as_of="2026-03-08", text="Heads-up for the ED.", provider="template"
+    )
     assert h["status"] == "draft" and h["delivery"] == "not sent (demo)"
     approved = store.approve_heads_up(A, h["id"])
     assert approved["status"] == "approved" and approved["approved_by_role"] == "Infection control"
@@ -133,13 +164,14 @@ def test_order_feedback_summary_counts_without_identifiers(db):
     card = {"card_key": "card-1", "source_id": "tmp_uti_women_20", "state": "info"}
     assert store.log_order_feedback(A, outcome="shown", as_of="2026-06-21", **card)["logged"]
     assert not store.log_order_feedback(A, outcome="shown", as_of="2026-06-21", **card)["logged"]  # once per draft
-    store.log_order_feedback(A, outcome="change", changed_to="MEC", as_of="2026-06-21", **card)
+    store.log_order_feedback(A, outcome="edit", as_of="2026-06-21", **card)  # back to the order
+    store.log_order_feedback(A, outcome="change", changed_to="MEC", as_of="2026-06-21", **card)  # the doctor's pick
     store.log_order_feedback(A, outcome="keep", reason="Patient-specific reason", as_of="2026-06-21", **card)
     with pytest.raises(ValueError):
         store.log_order_feedback(A, outcome="keep", reason="free text about Ms X", as_of="2026-06-21", **card)
     [row] = store.feedback_summary(A, "2026-06-21")
     assert row["text"] == "shown 1 time, changed 1"
-    assert row["kept"] == 1 and row["keep_reasons"] == {"Patient-specific reason": 1}
+    assert (row["edited"], row["kept"], row["keep_reasons"]) == (1, 1, {"Patient-specific reason": 1})
     assert store.feedback_summary(A, "2026-06-14") == []  # logged at a later replay date
     assert store.feedback_summary(B, "2026-06-21") == []
     with sqlite3.connect(db) as con:
@@ -150,10 +182,20 @@ def test_order_feedback_summary_counts_without_identifiers(db):
 def test_cds_feedback_takes_its_source_from_the_shown_card():
     card = {"card_key": "6f2b6c1e-0000-5000-8000-000000000001", "source_id": "seed-uro-esbl-2025", "state": "warning"}
     store.log_order_feedback(store.ANONYMOUS, outcome="shown", as_of="2025-06-15", **card)
-    store.log_cds_feedback(store.ANONYMOUS, service_id="strainwatch-order-sign", card_uuid=card["card_key"],
-                           outcome="overridden", override_reason="keep")
-    store.log_cds_feedback(store.ANONYMOUS, service_id="strainwatch-order-sign", card_uuid=card["card_key"],
-                           outcome="accepted", accepted_suggestions=["6f2b6c1e-0000-5000-8000-000000000002"])
+    store.log_cds_feedback(
+        store.ANONYMOUS,
+        service_id="strainwatch-order-sign",
+        card_uuid=card["card_key"],
+        outcome="overridden",
+        override_reason="keep",
+    )
+    store.log_cds_feedback(
+        store.ANONYMOUS,
+        service_id="strainwatch-order-sign",
+        card_uuid=card["card_key"],
+        outcome="accepted",
+        accepted_suggestions=["6f2b6c1e-0000-5000-8000-000000000002"],
+    )
     [row] = store.feedback_summary(store.ANONYMOUS, "2025-06-15")
     assert (row["source_id"], row["shown"], row["kept"], row["changed"]) == ("seed-uro-esbl-2025", 1, 1, 1)
     with pytest.raises(ValueError):
@@ -170,7 +212,9 @@ def test_session_header_validation():
 
 def test_a_caller_without_a_session_reads_the_seeds_and_can_never_approve_or_revoke():
     _approve(A)
-    store.log_cds_feedback(store.ANONYMOUS, service_id="strainwatch-order-sign", card_uuid="card-1", outcome="overridden")
+    store.log_cds_feedback(
+        store.ANONYMOUS, service_id="strainwatch-order-sign", card_uuid="card-1", outcome="overridden"
+    )
     assert [a["id"] for a in store.alerts(None)] == [s["id"] for s in C.DEMO_ALERT_SEEDS]
     assert store.feedback_summary(None, "2026-03-15") == [] and store.heads_ups(None, "2026-03-15") == []
     for nobody in (None, store.ANONYMOUS):
@@ -184,15 +228,24 @@ def test_a_caller_without_a_session_reads_the_seeds_and_can_never_approve_or_rev
 
 
 def test_alert_input_checks():
-    mine = _approve(A, wards=["ICU", "ICU"], drugs=["MEM", "CRO", "MEM"], resistant_to=["CLI", "FOX"],
-                    expires_on="2026-06-07")  # 90 days after the brief of 9 Mar: the longest allowed
+    mine = _approve(
+        A, wards=["ICU", "ICU"], drugs=["MEM", "CRO", "MEM"], resistant_to=["CLI", "FOX"], expires_on="2026-06-07"
+    )  # 90 days after the brief of 9 Mar: the longest allowed
     assert (mine["wards"], mine["drugs"], mine["resistant_to"]) == (["ICU"], ["CRO", "MEM"], ["FOX", "CLI"])
     assert _approve(A, message=" Possible cluster, ICU.\n\tTyping advised. ")["message"] == (
-        "Possible cluster, ICU. Typing advised.")
-    bad = [({"expires_on": "2026-06-08"}, "expires_on"), ({"expires_on": "9999-12-31"}, "expires_on"),
-           ({"expires_on": "2026-03-08"}, "expires_on"), ({"approved_by_role": "ward_doctor"}, "infection control"),
-           ({"message": "Typing advised.\u202e"}, "control"), ({"message": "MRSA\x00"}, "control"),
-           ({"message": "   "}, "empty"), ({"resistant_to": ["XYZ"]}, "resistant_to"), ({"wards": []}, "wards")]
+        "Possible cluster, ICU. Typing advised."
+    )
+    bad = [
+        ({"expires_on": "2026-06-08"}, "expires_on"),
+        ({"expires_on": "9999-12-31"}, "expires_on"),
+        ({"expires_on": "2026-03-08"}, "expires_on"),
+        ({"approved_by_role": "ward_doctor"}, "infection control"),
+        ({"message": "Typing advised.\u202e"}, "control"),
+        ({"message": "MRSA\x00"}, "control"),
+        ({"message": "   "}, "empty"),
+        ({"resistant_to": ["XYZ"]}, "resistant_to"),
+        ({"wards": []}, "wards"),
+    ]
     for change, message in bad:
         with pytest.raises(ValueError, match=message):
             _approve(A, **change)

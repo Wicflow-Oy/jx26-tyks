@@ -1,0 +1,4 @@
+# Tool settings only; runtime dependencies are pinned in requirements.txt.
+[tool.ruff]
+line-length = 120
+target-version = "py312"

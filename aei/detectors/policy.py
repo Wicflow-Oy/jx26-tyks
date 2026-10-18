@@ -2,12 +2,13 @@
 
 Ported from 51_codex_fixes_check (README rule: first isolate per patient inside the rolling window, among tested isolates)
 and 07/11 (the 30-day episode rule, `first_30d`). The line's `counting_rule` governs the policy item and the order card,
-so the brief's rule toggle does not move the line; `policy_states(..., rule="30d")` shows the alternative count.
+so the brief's rule toggle does not move the line; `policy_states(..., rule="30d")` shows the 30-day count.
 
-`policy_states(ds, as_of)` is read by the order-screen card (workstream D): exact counts, Jeffreys interval, the rate
-one year earlier, the threshold, `crossed_on` (first week-end at or above the line in the current run) and the
-local-guide alternative quoted from config (never chosen by a model).
+`policy_states(ds, as_of)` is read by the order screen and My ward banners: exact counts, Jeffreys interval, the rate
+one year earlier, the threshold and `crossed_on` (first week-end at or above the line in the current run). A line
+speaks about its own drug only and never names another one.
 """
+
 from collections import OrderedDict
 
 import pandas as pd
@@ -15,7 +16,9 @@ import pandas as pd
 from .. import config as C
 from .. import data, stats
 from .. import signal as sig
-from . import day, drug_label, ds_key, organism_label, plain, ts, ward_label
+from ..data import to_json
+from ..i18n import short_organism
+from . import drug_label, ds_key, iso, ts, ward_label
 
 METHOD = "rolling 52-week resistant share under the policy line's counting rule (51_codex_fixes_check)"
 _POP: dict = {}
@@ -34,8 +37,9 @@ def _population(ds, line: dict) -> pd.DataFrame:
             m &= x.ward_code.isin(pop["wards"])
         if pop.get("sex"):
             m &= x.sex == pop["sex"]
-        _POP[key] = x.loc[m, ["isolate_id", "patient_id", "organism", "specimen", "sample_date", "first_30d",
-                              line["drug"]]].sort_values(["sample_date", "isolate_id"])
+        _POP[key] = x.loc[
+            m, ["isolate_id", "patient_id", "organism", "specimen", "sample_date", "first_30d", line["drug"]]
+        ].sort_values(["sample_date", "isolate_id"])
     return _POP[key]
 
 
@@ -70,7 +74,7 @@ def population_label(line: dict) -> str:
 
 def _organism_text(line: dict) -> str:
     spec = {"urine": "urinary ", "blood": "blood ", "wound": "wound "}.get(line.get("specimen"), "")
-    return f"{spec}{organism_label(line['organism'])}"
+    return f"{spec}{short_organism(line['organism'])}"
 
 
 def state(ds, line: dict, as_of, rule: str | None = None) -> dict:
@@ -89,18 +93,38 @@ def state(ds, line: dict, as_of, rule: str | None = None) -> dict:
     xp, np_ = _counts(ds, line, prior_end, rule)
     lo, hi = stats.jeffreys_interval(x, n)
     days = int(line["window_days"])
-    return plain({
-        "id": line["id"], "signal_id": sig.signal_id("policy_line", {"line": line["id"]}), "label": line["label"],
-        "as_of": day(end), "drug": line["drug"], "drug_label": drug_label(line["drug"]), "organism": line["organism"],
-        "specimen": line["specimen"], "population": line.get("population", {}), "population_label": population_label(line),
-        "rate": x / n if n else None, "x": x, "n": n, "interval": [lo, hi],
-        "rate_prior": xp / np_ if np_ else None, "x_prior": xp, "n_prior": np_, "prior_as_of": day(prior_end),
-        "threshold": thr, "crossed_on": None if crossed is None else day(crossed), "active": active,
-        "local_guide_alternative": dict(line["local_guide_alternative"]), "message": line["message"],
-        "order_units": list(line.get("order_units", [])), "order_indication": line.get("order_indication"),
-        "counting_rule": rule, "window_days": days,
-        "date_from": day(end - pd.Timedelta(days=days - 1)), "date_to": day(end),
-    })
+    return to_json(
+        {
+            "id": line["id"],
+            "signal_id": sig.signal_id("policy_line", {"line": line["id"]}),
+            "label": line["label"],
+            "as_of": iso(end),
+            "drug": line["drug"],
+            "drug_label": drug_label(line["drug"]),
+            "organism": line["organism"],
+            "specimen": line["specimen"],
+            "population": line.get("population", {}),
+            "population_label": population_label(line),
+            "rate": x / n if n else None,
+            "x": x,
+            "n": n,
+            "interval": [lo, hi],
+            "rate_prior": xp / np_ if np_ else None,
+            "x_prior": xp,
+            "n_prior": np_,
+            "prior_as_of": iso(prior_end),
+            "threshold": thr,
+            "crossed_on": None if crossed is None else iso(crossed),
+            "active": active,
+            "message": line["message"],
+            "order_units": list(line.get("order_units", [])),
+            "order_indication": line.get("order_indication"),
+            "counting_rule": rule,
+            "window_days": days,
+            "date_from": iso(end - pd.Timedelta(days=days - 1)),
+            "date_to": iso(end),
+        }
+    )
 
 
 def policy_states(ds, as_of, rule: str | None = None) -> list[dict]:
@@ -111,43 +135,103 @@ def policy_states(ds, as_of, rule: str | None = None) -> list[dict]:
 def _evidence(line: dict, s: dict, counts: dict) -> dict:
     pop = line.get("population", {})
     return {
-        "filter": {"ward": list(pop.get("wards") or []) or None, "specimen": line["specimen"],
-                   "organism": line["organism"], "drug": line["drug"], "sex": pop.get("sex"),
-                   "date_from": s["date_from"], "date_to": s["date_to"], "rule": s["counting_rule"]},
+        "filter": {
+            "ward": list(pop.get("wards") or []) or None,
+            "specimen": line["specimen"],
+            "organism": line["organism"],
+            "drug": line["drug"],
+            "sex": pop.get("sex"),
+            "date_from": s["date_from"],
+            "date_to": s["date_to"],
+            "rule": s["counting_rule"],
+        },
         "counts": counts,
         "method": METHOD,
-        "params": {"threshold": s["threshold"], "window_days": s["window_days"], "line_id": line["id"],
-                   "crossed_on": s["crossed_on"], "prior_as_of": s["prior_as_of"]},
+        "params": {
+            "threshold": s["threshold"],
+            "window_days": s["window_days"],
+            "line_id": line["id"],
+            "crossed_on": s["crossed_on"],
+            "prior_as_of": s["prior_as_of"],
+        },
     }
 
 
 def _signal(line: dict, s: dict) -> dict:
-    slots = {"drug_label": s["drug_label"], "organism_label": _organism_text(line),
-             "population_label": s["population_label"], "rate": s["rate"], "counts": [s["x"], s["n"]],
-             "window_weeks": s["window_days"] // 7, "relation": "above" if s["rate"] > s["threshold"] else "at",
-             "threshold": s["threshold"], "crossed_on": s["crossed_on"], "rate_prior": s["rate_prior"],
-             "counts_prior": [s["x_prior"], s["n_prior"]], "interval": s["interval"],
-             "alternative": s["local_guide_alternative"]["text"]}
-    counts = {"resistant": s["x"], "tested": s["n"], "prior_resistant": s["x_prior"], "prior_tested": s["n_prior"],
-              "interval": s["interval"]}
+    slots = {
+        "drug_label": s["drug_label"],
+        "organism_label": _organism_text(line),
+        "population_label": s["population_label"],
+        "rate": s["rate"],
+        "counts": [s["x"], s["n"]],
+        "window_weeks": s["window_days"] // 7,
+        "relation": "above" if s["rate"] > s["threshold"] else "at",
+        "threshold": s["threshold"],
+        "crossed_on": s["crossed_on"],
+        "rate_prior": s["rate_prior"],
+        "counts_prior": [s["x_prior"], s["n_prior"]],
+        "interval": s["interval"],
+    }
+    counts = {
+        "resistant": s["x"],
+        "tested": s["n"],
+        "prior_resistant": s["x_prior"],
+        "prior_tested": s["n_prior"],
+        "interval": s["interval"],
+    }
     return sig.make_signal(
-        "policy_line", {"line": line["id"]}, priority="P2", as_of=s["as_of"], template_id="trend_policy_line",
-        slots=slots, evidence=_evidence(line, s, counts), ward=None, specimen=line["specimen"],
-        organism=line["organism"], drug=line["drug"], section="policy", advice=line["message"])
+        "policy_line",
+        {"line": line["id"]},
+        priority="P2",
+        as_of=s["as_of"],
+        template_id="trend_policy_line",
+        slots=slots,
+        evidence=_evidence(line, s, counts),
+        ward=None,
+        specimen=line["specimen"],
+        organism=line["organism"],
+        drug=line["drug"],
+        section="policy",
+        advice=line["message"],
+    )
 
 
 def _resolved_signal(line: dict, s: dict, last: dict) -> dict:
     """The week after the rate falls below the line: last week's flagged value and this week's."""
-    slots = {"drug_label": s["drug_label"], "organism_label": _organism_text(line),
-             "population_label": s["population_label"], "last_flagged": last["as_of"], "rate_last": last["rate"],
-             "counts_last": [last["x"], last["n"]], "rate": s["rate"], "counts": [s["x"], s["n"]],
-             "window_weeks": s["window_days"] // 7, "threshold": s["threshold"]}
-    counts = {"resistant": s["x"], "tested": s["n"], "last_flagged_resistant": last["x"],
-              "last_flagged_tested": last["n"], "interval": s["interval"]}
+    slots = {
+        "drug_label": s["drug_label"],
+        "organism_label": _organism_text(line),
+        "population_label": s["population_label"],
+        "last_flagged": last["as_of"],
+        "rate_last": last["rate"],
+        "counts_last": [last["x"], last["n"]],
+        "rate": s["rate"],
+        "counts": [s["x"], s["n"]],
+        "window_weeks": s["window_days"] // 7,
+        "threshold": s["threshold"],
+    }
+    counts = {
+        "resistant": s["x"],
+        "tested": s["n"],
+        "last_flagged_resistant": last["x"],
+        "last_flagged_tested": last["n"],
+        "interval": s["interval"],
+    }
     return sig.make_signal(
-        "policy_line", {"line": line["id"]}, priority="P2", as_of=s["as_of"], template_id="trend_policy_line_resolved",
-        slots=slots, evidence=_evidence(line, s, counts), ward=None, specimen=line["specimen"],
-        organism=line["organism"], drug=line["drug"], status="resolved", section="policy")
+        "policy_line",
+        {"line": line["id"]},
+        priority="P2",
+        as_of=s["as_of"],
+        template_id="trend_policy_line_resolved",
+        slots=slots,
+        evidence=_evidence(line, s, counts),
+        ward=None,
+        specimen=line["specimen"],
+        organism=line["organism"],
+        drug=line["drug"],
+        status="resolved",
+        section="policy",
+    )
 
 
 def detect(ds, as_of, rule: str = "readme_period") -> list[dict]:

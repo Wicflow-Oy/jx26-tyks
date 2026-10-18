@@ -6,6 +6,7 @@ subset row stores the position of the previous same-key row in that subset; insi
 isolates are exactly the rows whose previous position is < s. That equals `data.first_isolates(rows, "readme_period")`
 on the same rows. The 30-day rule uses the `first_30d` flag. Kept in memory (no patient-level data is written to disk).
 """
+
 import threading
 from dataclasses import dataclass
 
@@ -13,10 +14,10 @@ import numpy as np
 import pandas as pd
 
 from . import config as C
-from .coverage import FLAGS, Counts, counts_from_arrays, indicator_matrix, raw_matrix
+from .coverage import FLAGS, Counts, counts_from_arrays, indicator_matrix
 
 RULES = ("readme_period", "30d")
-_BASE: dict[int, tuple] = {}          # id(isolates) -> (isolates, Base); holding the frame pins its id
+_BASE: dict[int, tuple] = {}  # id(isolates) -> (isolates, Base); holding the frame pins its id
 _SUBSETS: dict[tuple, "Subset"] = {}
 _MAX_BASES, _MAX_SUBSETS = 2, 128
 _LOCK = threading.Lock()
@@ -26,13 +27,12 @@ _LOCK = threading.Lock()
 class Base:
     orgs: tuple
     org_code: np.ndarray
-    dates: np.ndarray       # datetime64[ns], sorted
-    key_code: np.ndarray    # patient x organism x specimen id (the README rule's deduplication key)
+    dates: np.ndarray  # datetime64[ns], sorted
+    key_code: np.ndarray  # patient x organism x specimen id (the README rule's deduplication key)
     first30: np.ndarray
     ind: np.ndarray
-    raw: np.ndarray
     flags: np.ndarray
-    cols: dict              # filter columns as numpy arrays
+    cols: dict  # filter columns as numpy arrays
 
 
 def base(ds) -> Base:
@@ -61,11 +61,19 @@ def _build_base(x: pd.DataFrame) -> Base:
         raise ValueError("isolate table must be sorted by sample_date")
     orgs = tuple(sorted(x["organism"].unique()))
     code = {o: i for i, o in enumerate(orgs)}
-    return Base(orgs=orgs, org_code=x["organism"].map(code).to_numpy(dtype=int), dates=dates,
-             key_code=x.groupby(["patient_id", "organism", "specimen"], sort=False).ngroup().to_numpy(),
-             first30=x["first_30d"].to_numpy(dtype=bool), ind=indicator_matrix(x), raw=raw_matrix(x),
-             flags=x[list(FLAGS)].to_numpy(dtype=float),
-             cols={c: x[c].to_numpy() for c in ("ward_code", "ward_type", "specimen", "sex", "age_band", "organism", "home_area")})
+    return Base(
+        orgs=orgs,
+        org_code=x["organism"].map(code).to_numpy(dtype=int),
+        dates=dates,
+        key_code=x.groupby(["patient_id", "organism", "specimen"], sort=False).ngroup().to_numpy(),
+        first30=x["first_30d"].to_numpy(dtype=bool),
+        ind=indicator_matrix(x),
+        flags=x[list(FLAGS)].to_numpy(dtype=float),
+        cols={
+            c: x[c].to_numpy()
+            for c in ("ward_code", "ward_type", "specimen", "sex", "age_band", "organism", "home_area")
+        },
+    )
 
 
 class Subset:
@@ -107,14 +115,24 @@ class Subset:
     def counts(self, lo, hi, rule: str = "readme_period") -> Counts:
         r = self.rows(lo, hi, rule)
         b = self.b
-        return counts_from_arrays(b.orgs, b.org_code[r], b.ind[r], b.raw[r], b.flags[r])
+        return counts_from_arrays(b.orgs, b.org_code[r], b.ind[r], b.flags[r])
 
 
-def subset(ds, *, specimen_group: str, wards=None, organism=None, sex=None, age_band=None, setting=None,
-           home_area=None) -> Subset:
+def subset(
+    ds, *, specimen_group: str, wards=None, organism=None, sex=None, age_band=None, setting=None, home_area=None
+) -> Subset:
     """Cached Subset for validated filters. wards: None or a tuple of ward codes; setting: inpatient|outpatient|None."""
     b = base(ds)
-    key = (id(ds.isolates), specimen_group, tuple(wards) if wards else None, organism, sex, age_band, setting, home_area)
+    key = (
+        id(ds.isolates),
+        specimen_group,
+        tuple(wards) if wards else None,
+        organism,
+        sex,
+        age_band,
+        setting,
+        home_area,
+    )
     hit = _SUBSETS.get(key)
     if hit is not None and hit.b is b:
         return hit

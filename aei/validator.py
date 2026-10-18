@@ -22,7 +22,8 @@ Policy decisions (reviewable):
   and Swedish "andra" (both mean "other" as well as "second") are allowed for the same reason. This deviates from the
   CONTRACTS.md section 6 list, which names en/ett.
 - "outbreak" is rejected in every form, not only "outbreak confirmed": the product says "unusual pattern" or
-  "possible cluster" (research w31, section 2.9). "confirmed", "clone"/"same strain" (a typing claim; say "profile
+  "possible cluster" (research w31, section 2.9). Finnish "epidemiaselvitys" (THL's epidemic check, a procedure) is
+  allowed; every other "epidemia" form is rejected. "confirmed", "clone"/"same strain" (a typing claim; say "profile
   match, not typing") and "intermediate" (results are S/R) are rejected too.
 - Hidden format or control characters (zero-width spaces, bidi marks) are rejected outright.
 - Format specs in a skeleton ("{rate:pct0}") are rejected: formats are fixed by the template, in code.
@@ -31,6 +32,7 @@ Known limits: the validator checks numbers, the listed terms, slots and form. It
 is true ("most patients were on one ward" is caught; "the pattern is spreading" is not). ASCII Roman numerals
 ("III") and look-alike letters from other scripts are not detected.
 """
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -39,7 +41,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from numbers import Integral, Real
 
-from .render import fmt
+from .render import SLOT, fmt
 
 MAX_SKELETON_CHARS = 700
 
@@ -48,86 +50,332 @@ MAX_SKELETON_CHARS = 700
 # ---------------------------------------------------------------------------------------------------------------
 NUMBER_WORDS = {
     "en": (
-        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
-        "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
-        "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
-        r"hundreds?", r"thousands?", r"millions?", r"billions?", r"dozens?",
-        "half", "halves", r"quarters?", r"thirds?", "second", "fourth", "fifth", "sixth", "seventh", "eighth",
-        "ninth", "tenth", "eleventh", "twelfth", r"\w+teenth", r"\w+tieth", "hundredth", "thousandth",
-        "twice", "thrice", r"doubles?", r"triples?", r"quadruples?",
-        "percent", r"per\s+cent", r"percentages?", "pct",
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "thirteen",
+        "fourteen",
+        "fifteen",
+        "sixteen",
+        "seventeen",
+        "eighteen",
+        "nineteen",
+        "twenty",
+        "thirty",
+        "forty",
+        "fifty",
+        "sixty",
+        "seventy",
+        "eighty",
+        "ninety",
+        r"hundreds?",
+        r"thousands?",
+        r"millions?",
+        r"billions?",
+        r"dozens?",
+        "half",
+        "halves",
+        r"quarters?",
+        r"thirds?",
+        "second",
+        "fourth",
+        "fifth",
+        "sixth",
+        "seventh",
+        "eighth",
+        "ninth",
+        "tenth",
+        "eleventh",
+        "twelfth",
+        r"\w+teenth",
+        r"\w+tieth",
+        "hundredth",
+        "thousandth",
+        "twice",
+        "thrice",
+        r"doubles?",
+        r"triples?",
+        r"quadruples?",
+        "percent",
+        r"per\s+cent",
+        r"percentages?",
+        "pct",
     ),
     "fi": (
-        r"nolla\w*", "yksi", "yksitoista", r"yksittäi\w*", "yhden", "yhtä", "yhdelle", "yhdeltä", "yhdellä", "yhdestä",
-        r"kaksi\w*", r"kahde\w*", "kahta", "kahtena", r"kolm\w*", r"nelj\w*", r"viisi\w*", r"viide\w*", "viittä",
-        r"kuusi\w*", r"kuude\w*", "kuutta", r"seitsem\w*", r"yhdeks\w*", r"kymme\w*",
-        "sata", "sataa", r"sadan\w*", "satoja", r"sadas\w*", r"tuhat\w*", r"tuhann\w*", r"tuhans\w*", r"miljoon\w*",
-        "puoli", "puolet", "puolta", r"puolikas\w*", r"puolittu\w*", r"puoliintu\w*",
+        r"nolla\w*",
+        "yksi",
+        "yksitoista",
+        r"yksittäi\w*",
+        "yhden",
+        "yhtä",
+        "yhdelle",
+        "yhdeltä",
+        "yhdellä",
+        "yhdestä",
+        r"kaksi\w*",
+        r"kahde\w*",
+        "kahta",
+        "kahtena",
+        r"kolm\w*",
+        r"nelj\w*",
+        r"viisi\w*",
+        r"viide\w*",
+        "viittä",
+        r"kuusi\w*",
+        r"kuude\w*",
+        "kuutta",
+        r"seitsem\w*",
+        r"yhdeks\w*",
+        r"kymme\w*",
+        "sata",
+        "sataa",
+        r"sadan\w*",
+        "satoja",
+        r"sadas\w*",
+        r"tuhat\w*",
+        r"tuhann\w*",
+        r"tuhans\w*",
+        r"miljoon\w*",
+        "puoli",
+        "puolet",
+        "puolta",
+        r"puolikas\w*",
+        r"puolittu\w*",
+        r"puoliintu\w*",
         r"prosent\w*",
     ),
     "sv": (
-        r"noll\w*", r"två\w*", "tre", r"tredje\w*", r"tretton\w*", r"trettio\w*",
-        r"fyra\w*", r"fyrti\w*", r"fjärde\w*", r"fjorton\w*", "fem", r"femte\w*", r"femton\w*", r"femti\w*",
-        "sex", r"sexton\w*", r"sexti\w*", r"sjätte\w*", "sju", r"sjunde\w*", r"sjutton\w*", r"sjutti\w*",
-        r"åtta\w*", r"åttio\w*", r"åttonde\w*", r"arton\w*", "nio", r"nionde\w*", r"nitton\w*", r"nitti\w*",
-        "tio", r"tionde\w*", r"tiotal\w*", "elva", "elfte", r"tolv\w*", "tolfte", r"tjugo\w*",
-        r"hundra\w*", r"tusen\w*", r"miljon\w*", r"dussin\w*",
-        r"halv\w*", "hälften", r"dubbel\w*", r"dubbla\w*", r"trippel\w*", r"procent\w*",
+        r"noll\w*",
+        r"två\w*",
+        "tre",
+        r"tredje\w*",
+        r"tretton\w*",
+        r"trettio\w*",
+        r"fyra\w*",
+        r"fyrti\w*",
+        r"fjärde\w*",
+        r"fjorton\w*",
+        "fem",
+        r"femte\w*",
+        r"femton\w*",
+        r"femti\w*",
+        "sex",
+        r"sexton\w*",
+        r"sexti\w*",
+        r"sjätte\w*",
+        "sju",
+        r"sjunde\w*",
+        r"sjutton\w*",
+        r"sjutti\w*",
+        r"åtta\w*",
+        r"åttio\w*",
+        r"åttonde\w*",
+        r"arton\w*",
+        "nio",
+        r"nionde\w*",
+        r"nitton\w*",
+        r"nitti\w*",
+        "tio",
+        r"tionde\w*",
+        r"tiotal\w*",
+        "elva",
+        "elfte",
+        r"tolv\w*",
+        "tolfte",
+        r"tjugo\w*",
+        r"hundra\w*",
+        r"tusen\w*",
+        r"miljon\w*",
+        r"dussin\w*",
+        r"halv\w*",
+        "hälften",
+        r"dubbel\w*",
+        r"dubbla\w*",
+        r"trippel\w*",
+        r"procent\w*",
     ),
 }
 QUANTITY_TERMS = {  # quantifiers that encode a number or a share
-    "en": (r"couples?", r"pairs?", "both", r"majority", r"minority", r"most\s+of", r"(?:nearly|almost)\s+all",
-           r"the\s+bulk\s+of"),
-    "fi": (r"pari\w*", r"molem\w*", "kumpikin", r"enemmistö\w*", r"vähemmistö\w*", r"suurin\s+osa\w*",
-           r"valtaosa\w*", r"(?:lähes|melkein)\s+kaik\w*"),
-    "sv": (r"ett\s+par", r"båda", r"bägge\w*", r"majoritet\w*", r"minoritet\w*", r"de\s+flesta", "flertalet",
-           r"nästan\s+alla", r"en\s+av", r"ett\s+av", r"en\s+enda", r"ett\s+enda"),
+    "en": (
+        r"couples?",
+        r"pairs?",
+        "both",
+        r"majority",
+        r"minority",
+        r"most\s+of",
+        r"(?:nearly|almost)\s+all",
+        r"the\s+bulk\s+of",
+    ),
+    "fi": (
+        r"pari\w*",
+        r"molem\w*",
+        "kumpikin",
+        r"enemmistö\w*",
+        r"vähemmistö\w*",
+        r"suurin\s+osa\w*",
+        r"valtaosa\w*",
+        r"(?:lähes|melkein)\s+kaik\w*",
+    ),
+    "sv": (
+        r"ett\s+par",
+        r"båda",
+        r"bägge\w*",
+        r"majoritet\w*",
+        r"minoritet\w*",
+        r"de\s+flesta",
+        "flertalet",
+        r"nästan\s+alla",
+        r"en\s+av",
+        r"ett\s+av",
+        r"en\s+enda",
+        r"ett\s+enda",
+    ),
 }
 COMPARISON_TERMS = {  # numbers computed in words: the engine computes, the model only references
-    "en": (r"doubled", r"doubling", r"tripled", r"tripling", r"quadrupled", r"halved", r"halving", r"\w*fold",
-           r"times\s+(?:higher|lower|more|less|greater|as|the|over)", r"percentage\s+points?",
-           r"points?\s+(?:higher|lower|up|down)",
-           r"(?:increase|decrease|rise|drop|fall|jump|reduction)\s+of",
-           r"(?:rose|fell|dropped|increased|decreased|grew|climbed|jumped|declined|went\s+up|went\s+down)\s+by"),
-    "fi": (r"\w*kertai\w*", r"\w*kertaistu\w*", "verran",
-           r"kertaa\s+(?:enemmän|suurempi|korkeampi|vähemmän|pienempi|niin)"),
-    "sv": (r"\w*faldig\w*", r"fördubbl\w*", r"tredubbl\w*", r"halver\w*",
-           r"(?:ökade|minskade|steg|sjönk|föll|växte)\s+med",
-           r"gånger\s+(?:högre|lägre|fler|färre|mer|mindre|så|större)"),
+    "en": (
+        r"doubled",
+        r"doubling",
+        r"tripled",
+        r"tripling",
+        r"quadrupled",
+        r"halved",
+        r"halving",
+        r"\w*fold",
+        r"times\s+(?:higher|lower|more|less|greater|as|the|over)",
+        r"percentage\s+points?",
+        r"points?\s+(?:higher|lower|up|down)",
+        r"(?:increase|decrease|rise|drop|fall|jump|reduction)\s+of",
+        r"(?:rose|fell|dropped|increased|decreased|grew|climbed|jumped|declined|went\s+up|went\s+down)\s+by",
+    ),
+    "fi": (
+        r"\w*kertai\w*",
+        r"\w*kertaistu\w*",
+        "verran",
+        r"kertaa\s+(?:enemmän|suurempi|korkeampi|vähemmän|pienempi|niin)",
+    ),
+    "sv": (
+        r"\w*faldig\w*",
+        r"fördubbl\w*",
+        r"tredubbl\w*",
+        r"halver\w*",
+        r"(?:ökade|minskade|steg|sjönk|föll|växte)\s+med",
+        r"gånger\s+(?:högre|lägre|fler|färre|mer|mindre|så|större)",
+    ),
 }
 PREDICTION_TERMS = {
-    "en": (r"predict\w*", r"forecast\w*", "odds", r"probabilit\w*", "probable", "probably", "likelihood",
-           r"(?:un)?likely\s+to", r"chances?\s+(?:of|that)",
-           r"will\s+(?:rise|increase|spread|grow|continue|worsen|double|peak|fall|decrease)",
-           r"(?:is|are)\s+going\s+to", r"expected\s+to\s+(?:rise|increase|spread|grow|continue|worsen)",
-           r"best\s+(?:choice|option|drug|antibiotic|treatment)", r"drug\s+of\s+choice",
-           r"recommended\s+(?:drug|antibiotic|treatment|therapy)"),
-    "fi": (r"ennust\w*", r"todennäköi\w*", r"paras\s+(?:valinta|vaihtoehto|lääke)",
-           r"suositel\w*\s+(?:lääke\w*|antibiooti\w*|hoito\w*)",
-           r"tulee\s+(?:nousemaan|lisääntymään|leviämään|kasvamaan)"),
-    "sv": (r"förutsä\w*", r"förutspå\w*", r"prognos\w*", r"sannolik\w*",
-           r"bästa\s+(?:valet|val|alternativ\w*|läkemedl\w*|antibiotik\w*)",
-           r"rekommendera\w*\s+(?:läkemedel\w*|antibiotik\w*|behandling\w*)",
-           r"kommer\s+att\s+(?:öka|stiga|spridas|sprida|växa|fortsätta|förvärras)"),
+    "en": (
+        r"predict\w*",
+        r"forecast\w*",
+        "odds",
+        r"probabilit\w*",
+        "probable",
+        "probably",
+        "likelihood",
+        r"(?:un)?likely\s+to",
+        r"chances?\s+(?:of|that)",
+        r"will\s+(?:rise|increase|spread|grow|continue|worsen|double|peak|fall|decrease)",
+        r"(?:is|are)\s+going\s+to",
+        r"expected\s+to\s+(?:rise|increase|spread|grow|continue|worsen)",
+        r"best\s+(?:choice|option|drug|antibiotic|treatment)",
+        r"drug\s+of\s+choice",
+        r"recommended\s+(?:drug|antibiotic|treatment|therapy)",
+    ),
+    "fi": (
+        r"ennust\w*",
+        r"todennäköi\w*",
+        r"paras\s+(?:valinta|vaihtoehto|lääke)",
+        r"suositel\w*\s+(?:lääke\w*|antibiooti\w*|hoito\w*)",
+        r"tulee\s+(?:nousemaan|lisääntymään|leviämään|kasvamaan)",
+    ),
+    "sv": (
+        r"förutsä\w*",
+        r"förutspå\w*",
+        r"prognos\w*",
+        r"sannolik\w*",
+        r"bästa\s+(?:valet|val|alternativ\w*|läkemedl\w*|antibiotik\w*)",
+        r"rekommendera\w*\s+(?:läkemedel\w*|antibiotik\w*|behandling\w*)",
+        r"kommer\s+att\s+(?:öka|stiga|spridas|sprida|växa|fortsätta|förvärras)",
+    ),
 }
 RESTRICTED_TERMS = {
-    "en": (r"decoys?", r"outbreaks?", r"epidemics?", "confirmed", r"s\s*/\s*i\s*/\s*r", "intermediate",
-           r"zero\s+resistance", r"no\s+resistance", r"same\s+(?:strain|clone)", r"clon(?:e|es|al|ality|ed)"),
-    "fi": (r"epidemia\w*", r"taudinpurk\w*", r"vahvistettu\w*", r"varmistettu\w*", r"klooni\w*", r"sama\s+kanta\w*",
-           r"harhautu\w*", r"syötti\w*"),
-    "sv": (r"utbrott\w*", r"epidemi(?:n|er|erna|sk\w*)?", r"bekräftad\w*", "bekräftat", r"klon\w*", r"samma\s+stam\w*",
-           r"lockbete\w*", r"bulvan\w*", r"ingen\s+resistens", r"intermediär\w*"),
+    "en": (
+        r"decoys?",
+        r"outbreaks?",
+        r"epidemics?",
+        "confirmed",
+        r"s\s*/\s*i\s*/\s*r",
+        "intermediate",
+        r"zero\s+resistance",
+        r"no\s+resistance",
+        r"same\s+(?:strain|clone)",
+        r"clon(?:e|es|al|ality|ed)",
+    ),
+    "fi": (
+        r"epidemia(?!selvity)\w*",
+        r"taudinpurk\w*",
+        r"vahvistettu\w*",
+        r"varmistettu\w*",
+        r"klooni\w*",
+        r"sama\s+kanta\w*",
+        r"harhautu\w*",
+        r"syötti\w*",
+    ),
+    "sv": (
+        r"utbrott\w*",
+        r"epidemi(?:n|er|erna|sk\w*)?",
+        r"bekräftad\w*",
+        "bekräftat",
+        r"klon\w*",
+        r"samma\s+stam\w*",
+        r"lockbete\w*",
+        r"bulvan\w*",
+        r"ingen\s+resistens",
+        r"intermediär\w*",
+    ),
 }
 DOSING_TERMS = {
-    "en": ("mg", "mcg", "µg", "μg", "ug", "g", "kg", "ml", "iu", "mmol", r"doses?", "dosing", r"dosages?",
-           r"g\s*/\s*(?:day|d|kg)", r"per\s+kg", r"(?:once|twice|thrice|times|x)\s+(?:a\s+|per\s+)?(?:daily|day)",
-           r"every\s+\w+\s+hours"),
+    "en": (
+        "mg",
+        "mcg",
+        "µg",
+        "μg",
+        "ug",
+        "g",
+        "kg",
+        "ml",
+        "iu",
+        "mmol",
+        r"doses?",
+        "dosing",
+        r"dosages?",
+        r"g\s*/\s*(?:day|d|kg)",
+        r"per\s+kg",
+        r"(?:once|twice|thrice|times|x)\s+(?:a\s+|per\s+)?(?:daily|day)",
+        r"every\s+\w+\s+hours",
+    ),
     "fi": (r"annos\w*", r"annost\w*", r"(?:kertaa|kerran|kahdesti)\s+(?:päivässä|vuorokaudessa)", "vrk"),
     "sv": (r"dos(?:en|er|erna|ering\w*)?", r"(?:gång|gånger)\s+(?:dagligen|per\s+dag|om\s+dagen)"),
 }
 TREATMENT_TERMS = {  # prescribing instructions: the local guide, not the narrator, names alternatives
-    "en": (r"switch\s+(?:to|the\s+patient)", r"change\s+to", r"start\s+(?:treatment|antibiotics?|therapy)",
-           "prescribe", "administer", r"treat\s+(?:with|the\s+patient)", r"give\s+(?:the\s+patient|antibiotics?)"),
+    "en": (
+        r"switch\s+(?:to|the\s+patient)",
+        r"change\s+to",
+        r"start\s+(?:treatment|antibiotics?|therapy)",
+        "prescribe",
+        "administer",
+        r"treat\s+(?:with|the\s+patient)",
+        r"give\s+(?:the\s+patient|antibiotics?)",
+    ),
     "fi": ("vaihda", "määrää", r"aloita\s+(?:hoito|antibiootti|lääkitys)\w*"),
     "sv": (r"byt\s+till", r"ordinera\w*", r"sätt\s+in", r"börja\s+(?:behandling|med\s+antibiotika)\w*"),
 }
@@ -145,11 +393,12 @@ TERM_CATEGORIES = {  # error prefix -> term list; order is the order errors are 
     "treatment": TREATMENT_TERMS,
 }
 
-_PLACEHOLDER = re.compile(r"\{([a-z_][a-z0-9_]*)(?::([a-z0-9_]+))?\}")
 _ABBREVIATIONS = re.compile(r"\b(?:e\.g|i\.e)\.", re.IGNORECASE)
 _NUMBER_RUN = re.compile(r"\d+(?:[.,]\d+)*")
-_COMPILED = {cat: re.compile(r"\b(?:" + "|".join(p for lang in lists.values() for p in lang) + r")\b")
-             for cat, lists in TERM_CATEGORIES.items()}
+_COMPILED = {
+    cat: re.compile(r"\b(?:" + "|".join(p for lang in lists.values() for p in lang) + r")\b")
+    for cat, lists in TERM_CATEGORIES.items()
+}
 _IDENTIFIERS = [re.compile(p) for p in IDENTIFIER_PATTERNS]
 
 
@@ -209,13 +458,13 @@ def validate_skeleton(text: str, allowed_slots) -> ValidationResult:
     if len(text) > MAX_SKELETON_CHARS:
         errors.append(f"too_long:{len(text)}")
     errors += _hidden_chars(text)
-    for m in _PLACEHOLDER.finditer(text):
+    for m in SLOT.finditer(text):
         name, spec = m.group(1), m.group(2)
         if spec is not None:
             errors.append(f"format_spec:{name}:{spec}")
         if name not in allowed:
             errors.append(f"unknown_slot:{name}")
-    prose = _PLACEHOLDER.sub(" ∎ ", text)  # a neutral, non-word marker keeps phrase boundaries ("increase of ∎")
+    prose = SLOT.sub(" ∎ ", text)  # a neutral, non-word marker keeps phrase boundaries ("increase of ∎")
     if "{" in prose or "}" in prose:
         errors.append("malformed_placeholder")
     errors += _numerals(prose)
@@ -279,8 +528,7 @@ def _bounded(s: str) -> re.Pattern:
     return re.compile(pre + re.escape(s) + post)
 
 
-def validate_rendered(text: str, slots: dict, *, formats: dict | None = None,
-                      allowed_literals=()) -> ValidationResult:
+def validate_rendered(text: str, slots: dict, *, formats: dict | None = None, allowed_literals=()) -> ValidationResult:
     """Every number in `text` must be a formatted slot value.
 
     With `formats` (slot -> render format, as the template fixes them) a slot counts only in that format; without it,
@@ -301,7 +549,7 @@ def validate_rendered(text: str, slots: dict, *, formats: dict | None = None,
 
 def template_literals(template_text: str) -> list[str]:
     """Numbers and number words written into a fixed template's own text (outside its placeholders)."""
-    prose = _PLACEHOLDER.sub(" ∎ ", template_text)
+    prose = SLOT.sub(" ∎ ", template_text)
     found = [m.group(0) for m in _NUMBER_RUN.finditer(prose)]
     found += [m.group(0) for m in _COMPILED["number_word"].finditer(_normalise(prose))]
     return list(dict.fromkeys(found))

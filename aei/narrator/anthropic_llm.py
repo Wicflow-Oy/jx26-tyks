@@ -10,10 +10,15 @@ Request rules (verified API facts for the 5.5 models): no temperature/top_p/top_
 tool_choice, no thinking parameter, and one stable system prompt. The client is built on first use and only when
 credentials exist. Every live call first passes the spend and rate guard. Any stop_reason other than "end_turn"
 (a refusal, max_tokens) and any API error fall back to the template. Logs carry reason codes only, never prompts or keys.
+The model sees computed slots only (labels, counts, dates), never a patient or isolate id: a slot that looks like one
+stops the call before anything is sent.
 """
+
 from __future__ import annotations
 
+import json
 import logging
+import re
 
 import anthropic
 
@@ -35,17 +40,24 @@ PROMPT_VERSION = "narrator-1"  # part of the replay cache key: change it wheneve
 DEFAULT_MODEL = "claude-haiku-5-5"
 BACKENDS = ("anthropic", "bedrock", "vertex")
 MAX_TOKENS = 4096  # adaptive thinking (on by default on Haiku 5.5) counts toward this; a skeleton is ~100 tokens
-EFFORT = "low"     # a short rewrite needs little reasoning; keeps latency and cost down
+EFFORT = "low"  # a short rewrite needs little reasoning; keeps latency and cost down
 TIMEOUT_S = 10.0
 
 AUDIENCE_STYLE = {
     "infection_control": "one or two factual sentences for the infection-control team's weekly brief",
     "ward": "one short sentence for a banner shown to ward staff",
-    "ed": "a two- or three-sentence heads-up draft for the emergency department, reviewed by infection control "
-          "before anything is sent",
+    "ed": (
+        "a two- or three-sentence heads-up draft for the emergency department, reviewed by infection control before "
+        "anything is sent"
+    ),
 }
-LANGUAGE_NAMES = {"en": "English", "fi": "Finnish (plain clinical Finnish)",
-                  "sv": "Swedish (Finland-Swedish clinical usage)"}
+# The dataset's synthetic patient ids (P001948) and culture/isolate ids (C0000003-1)
+IDENTIFIER = re.compile(r"\bP\d{6}\b|\bC\d{7}(?:-\d+)?\b")
+LANGUAGE_NAMES = {
+    "en": "English",
+    "fi": "Finnish (plain clinical Finnish)",
+    "sv": "Swedish (Finland-Swedish clinical usage)",
+}
 
 SYSTEM_PROMPT = f"""You write short narration for {config.APP_NAME}, a weekly antimicrobial-resistance surveillance \
 tool used by a hospital's infection-control team. All data is synthetic.
@@ -94,28 +106,35 @@ def _build_client(backend: str):
         region = config.env("AWS_REGION", "eu-central-1")
         return anthropic.AnthropicBedrockMantle(aws_region=region, max_retries=1, timeout=TIMEOUT_S)
     if backend == "vertex":
-        return anthropic.AnthropicVertex(project_id=config.env("ANTHROPIC_VERTEX_PROJECT_ID"),
-                                         region=config.env("CLOUD_ML_REGION", "eu"), max_retries=1, timeout=TIMEOUT_S)
+        return anthropic.AnthropicVertex(
+            project_id=config.env("ANTHROPIC_VERTEX_PROJECT_ID"),
+            region=config.env("CLOUD_ML_REGION", "eu"),
+            max_retries=1,
+            timeout=TIMEOUT_S,
+        )
     return anthropic.Anthropic(api_key=config.env("ANTHROPIC_API_KEY"), max_retries=1, timeout=TIMEOUT_S)
 
 
 def user_prompt(template_id: str, slots: dict, *, audience: str, language: str) -> str:
-    return "\n".join([
-        f"audience: {audience} ({AUDIENCE_STYLE[audience]})",
-        f"language: {LANGUAGE_NAMES[language]}",
-        f"slots you may use: {', '.join('{' + name + '}' for name in slot_names(template_id))}",
-        f"reference skeleton: {plain_skeleton(template_id)}",
-        f"reference sentence (values filled in by code; do not copy them): {render_id(template_id, slots)}",
-        "Write the skeleton now.",
-    ])
+    return "\n".join(
+        [
+            f"audience: {audience} ({AUDIENCE_STYLE[audience]})",
+            f"language: {LANGUAGE_NAMES[language]}",
+            f"slots you may use: {', '.join('{' + name + '}' for name in slot_names(template_id))}",
+            f"reference skeleton: {plain_skeleton(template_id)}",
+            f"reference sentence (values filled in by code; do not copy them): {render_id(template_id, slots)}",
+            "Write the skeleton now.",
+        ]
+    )
 
 
 class AnthropicNarrator:
     name = "anthropic"
     prompt_version = PROMPT_VERSION
 
-    def __init__(self, client=None, *, model: str | None = None, backend: str | None = None,
-                 guard: Guard | None = None):
+    def __init__(
+        self, client=None, *, model: str | None = None, backend: str | None = None, guard: Guard | None = None
+    ):
         self.model = model or config.env("AEI_MODEL", DEFAULT_MODEL)
         self.backend = backend or config.env("AEI_LLM_BACKEND", "anthropic")
         if self.backend not in BACKENDS:
@@ -134,9 +153,18 @@ class AnthropicNarrator:
             return f"anthropic.{self.model}"
         return self.model
 
-    def narrate(self, template_id: str, slots: dict, *, audience: str = "infection_control", language: str = "en",
-                client_ip: str | None = None) -> Narration:
+    def narrate(
+        self,
+        template_id: str,
+        slots: dict,
+        *,
+        audience: str = "infection_control",
+        language: str = "en",
+        client_ip: str | None = None,
+    ) -> Narration:
         check_request(template_id, audience, language)
+        if IDENTIFIER.search(json.dumps(slots, default=str)):
+            return template_narration(template_id, slots, fallback_reason="identifier_in_slots")
         client = self._get_client()
         if client is None:
             return template_narration(template_id, slots, fallback_reason="no_key")
@@ -145,10 +173,14 @@ class AnthropicNarrator:
             return template_narration(template_id, slots, fallback_reason=refused)
         try:
             response = client.messages.create(
-                model=self._request_model(), max_tokens=MAX_TOKENS, system=SYSTEM_PROMPT,
+                model=self._request_model(),
+                max_tokens=MAX_TOKENS,
+                system=SYSTEM_PROMPT,
                 output_config={"effort": EFFORT},
-                messages=[{"role": "user", "content": user_prompt(template_id, slots, audience=audience,
-                                                                  language=language)}])
+                messages=[
+                    {"role": "user", "content": user_prompt(template_id, slots, audience=audience, language=language)}
+                ],
+            )
         except anthropic.APIError as e:
             reason = f"api_error:{getattr(e, 'status_code', None) or type(e).__name__}"
             log.warning("narration fell back to the template (%s)", reason)
