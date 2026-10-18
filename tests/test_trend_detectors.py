@@ -1,4 +1,4 @@
-"""Workstream B2: trend detectors (policy, resistance_change, outlier, expert_rules, completeness) and the registry.
+"""Trend detectors (policy, resistance_change, outlier, expert_rules, completeness) and the registry.
 Offline and deterministic; uses the session `ds` fixture. Goldens from CONTRACTS.md section 5.2 and analysis 35/39/40/44/51/52."""
 
 import logging

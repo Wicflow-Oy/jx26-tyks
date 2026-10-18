@@ -1,4 +1,4 @@
-"""Templates for the trend detectors and the brief (workstream B2). Merged into `aei.templates.TEMPLATES`.
+"""Templates for the trend detectors and the brief. Merged into `aei.templates.TEMPLATES`.
 
 New ids only (prefix `trend_`); the base ids in templates.py are never redefined. These templates carry no literal
 digits: window lengths and every count come through slots, so a test can check that each digit run in a rendered

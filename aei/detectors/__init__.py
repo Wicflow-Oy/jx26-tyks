@@ -1,4 +1,4 @@
-"""Detector registry. The brief imports detectors only through here, so it works before every workstream lands.
+"""Detector registry. The brief imports detectors only through here, so one missing detector never breaks it.
 
 `DETECTORS` lists module names inside `aei.detectors`. Each module exposes
 `detect(ds, as_of, rule="readme_period") -> list[signal]` (strictly as-of). Modules are imported lazily; a missing

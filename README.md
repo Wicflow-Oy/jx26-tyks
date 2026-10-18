@@ -1,37 +1,122 @@
-# Tyks x Mylab build (working name in `aei/config.py` → `APP_NAME`, placeholder "Strainwatch")
+# Strainwatch
 
-A weekly antimicrobial-resistance brief for hospital infection control, with three parts:
-- a ward doctor's "My ward" view;
-- anomaly detection on every screen;
-- a prescribing-moment context card.
+Weekly antibiotic-resistance surveillance for one hospital, on the Tyks x Mylab challenge data (JunctionX Turku 2026):
+a Monday brief for infection control, My ward for ward doctors, and an order check that flags the drug being ordered.
 
-It runs on the synthetic Tyks dataset only.
+![The Monday brief](docs/screenshots/brief.png)
 
-- **Spec:** `CONTRACTS.md` (data, time model, the evidence object, every module and endpoint, the doctor's view, public deployment).
-- **Deploy:** `DEPLOY.md` is written for the operator. He pulls the repo from GitHub onto the UpCloud box in Helsinki (compose project `jx-tyks`, Traefik or Caddy/nginx). No build session SSHes into the server. The repo is private in Wicflow-Oy. **New here? Start with `docs/HANDOFF.md`.**
-- **Status:** built in parallel workstreams on Sat 17 Oct. See "What works" below; it is updated at each integration.
+![The order check on a simulated order screen](docs/screenshots/order.png)
 
-## Run locally
+Live demo: <link>
+
+## Run it
+Python 3.12 on macOS or Linux:
 ```bash
-.venv/Scripts/python.exe -m pytest -q
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/uvicorn aei.api:app --host 127.0.0.1 --port 8765
+```
+Open http://127.0.0.1:8765. The app reads the challenge's 6 synthetic CSVs from the folder in `AEI_DATA_DIR`, or by
+default from the context repo cloned next to this one (`../jx26-tyks-context/data/synthetic_microbiology_dataset`).
+Without the data the server still starts and `/api/health` reports `"data_loaded": false`.
+Optional: `.venv/bin/python -m aei.precompute` (under a minute) fills the replay slider's weekly counts. No API key is
+needed: texts come from fixed templates.
+
+## Architecture
+- **Data:** [aei/data.py](aei/data.py) loads the lab export into one isolate table with first-isolate rules, and
+  [aei/phenotype_rules.py](aei/phenotype_rules.py) decides the effective S/R for each isolate and drug.
+- **Detection:** nine detectors in [aei/detectors/](aei/detectors/) (statistical tests and THL/EUCAST rules) feed the
+  Monday brief ([aei/brief.py](aei/brief.py)); My ward ([aei/views.py](aei/views.py)) shows R of n with intervals.
+- **Order check:** [aei/cds.py](aei/cds.py) decides with fixed rules whether an order stays quiet or gets a notice,
+  info, or a warning at signing (an approved alert, a policy line or the patient's own earlier result);
+  [aei/cds_hooks.py](aei/cds_hooks.py) serves it as HL7 CDS Hooks 2.0 cards.
+- **Text:** every sentence is a template plus computed slots, in English or Finnish. An optional Claude narrator may
+  reword the emergency-department heads-up draft, never the numbers.
+- **Delivery:** one FastAPI app ([aei/api.py](aei/api.py)) serves the JSON API and the static web app
+  ([web/](web/), no build step) from one container ([Dockerfile](Dockerfile), [DEPLOY.md](DEPLOY.md)).
+
+Data flow, time model, privacy and how it fits a hospital: [ARCHITECTURE.md](ARCHITECTURE.md). The full specification
+(data, evidence object, every endpoint, wording rules): [CONTRACTS.md](CONTRACTS.md).
+
+## Folder map
+```
+aei/                 the Python package
+  config.py          every threshold, window, local line and env setting
+  data.py            CSV loader and isolate table
+  phenotype_rules.py effective S/R rules
+  stats.py           intervals, small-n states, change test
+  signal.py          the evidence object every detector returns
+  detectors/         one module per detector, plus the registry
+  brief.py           the Monday brief
+  coverage.py        My ward cells (with aggregates.py for speed)
+  views.py           My ward, filters, trends
+  cds.py             the order check rules
+  cds_hooks.py       CDS Hooks 2.0 adapter
+  templates*.py      English templates (templates_fi.py: Finnish)
+  render.py, i18n.py number formats and the language layer
+  narrator/          optional model wording, with spend and rate guard
+  validator.py       checks on model text
+  jev.py             optional second-opinion adapter, inert by default
+  store.py           SQLite demo state per session
+  api.py             FastAPI app
+  precompute.py      cache warm-up CLI
+web/                 static UI: index.html, css/, js/ (ES modules), fonts/
+tests/               pytest suite, offline
+deploy/              compose files and the container entrypoint
+docs/screenshots/    README images
+ARCHITECTURE.md      data flow and design decisions
+CONTRACTS.md         the specification
+DEPLOY.md            running the public demo with Docker
+Dockerfile, requirements.txt, pyproject.toml, .env.example
+```
+
+## Where the key logic lives
+- [aei/phenotype_rules.py](aei/phenotype_rules.py): which result counts as S or R, and why (EUCAST and local rules).
+- [aei/detectors/phenotype.py](aei/detectors/phenotype.py): the shared-antibiogram cluster detector.
+- [aei/detectors/thl.py](aei/detectors/thl.py): THL guidance rule cards for CPE, VRE, ESBL and MRSA.
+- [aei/brief.py](aei/brief.py): builds the Monday brief from the detector registry, with new/ongoing/resolved status.
+- [aei/coverage.py](aei/coverage.py): one My ward cell: R of n, Jeffreys interval, small-n handling.
+- [aei/cds.py](aei/cds.py): when the order check stays quiet, informs or warns.
+- [aei/render.py](aei/render.py) and [aei/validator.py](aei/validator.py): numbers only from code; checks on model text.
+- [aei/config.py](aei/config.py): every threshold and local setting in one place.
+
+## Tests
+```bash
+.venv/bin/pip install pytest httpx ruff && .venv/bin/python -m pytest -q
+```
+Offline, about a minute, and needs the dataset. Covered: data loading and first-isolate rules, every detector against
+known episodes in the data, strict as-of behaviour, coverage and small-n states, the order check's demo scenarios and
+its rule that it never names another drug, number formats, the validator and the narrator's fallbacks (with a fake
+client), English and Finnish texts, per-session state, and the API with its public-demo guards.
+[tests/test_against_source.py](tests/test_against_source.py) re-derives the headline numbers from the raw CSVs with
+plain pandas and requires the product to match. [tests/test_ui.py](tests/test_ui.py) clicks through the web app in
+Chromium; it skips without Playwright (`.venv/bin/pip install playwright && .venv/bin/playwright install chromium`).
+
+Lint and format:
+```bash
+.venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```
 ```bash
-.venv/Scripts/python.exe -m uvicorn aei.api:app --host 127.0.0.1 --port 8765
+cd web && npx --yes prettier@3 --check . && npx --yes eslint@9 .
 ```
-The data is read from `AEI_DATA_DIR`, which defaults to `../jx26-tyks-context/data/synthetic_microbiology_dataset` (the context repo cloned next to this one), then to `../../context/data/synthetic_microbiology_dataset` (the original hackathon folder). Caches go to `.cache/` (gitignored). No key is needed. To record live narration, the team lead puts this app's key in `.env.local` (gitignored; config loads it at start). Keys never go in chat, git or logs.
 
-## Data terms (open question)
-- The dataset README states **no licence**; it only says that all data is synthetic.
-- The CSVs and patient-level derivations are never committed, and the app never offers them for download. It shows aggregates and synthetic line lists.
-- Whether the data may appear in a public repo, video or app is an **open organiser question**. Keep this repo private until it's answered.
+## What is real and what is mocked
+- **Real:** the detectors and statistics, the Monday brief and case files, My ward, the order check rules, the CDS
+  Hooks endpoints, the API, and English and Finnish output, all computed from the dataset.
+- **Mocked:** the hospital EHR order screen is a simulated stand-in for the patient record system, with no EHR
+  connected; heads-ups to the emergency department are drafted and approved but never sent; the nightly lab extract is
+  replaced by the synthetic CSVs.
+- **Optional:** the language model for heads-up wording, off without `ANTHROPIC_API_KEY`. The Jev second-opinion
+  adapter ([aei/jev.py](aei/jev.py)) stays inert without a key and a passing calibration.
 
-## Open questions for a doctor (the team lead to check)
-1. **Which 3 facts** matter most on the prescribing card? Today the card shows: what's happening (the alert or line), your drug on this unit (R of n, last 4 weeks vs 12 months) and the local-guide alternatives with their numbers.
-2. **Should the patient's own previous results come first,** above the unit numbers? Today they do, when present.
-3. **How many interruptions per shift are acceptable?** Today a warning appears only at "sign", and only for an approved alert covering this unit and drug, or the patient's own resistant isolate in the last 12 months.
-4. **Wording:** does "possible cluster" or "outbreak" work better? Today the app says "possible cluster" or "unusual pattern", with "typing advised", and never "outbreak confirmed".
-5. **Community units:** for ED and primary care, are the patient's home-area numbers the right comparison?
-6. **The local guide table** in `config.LOCAL_GUIDE_EXAMPLE` and the empirical-use lines in `config.EMPIRICAL_LINES` are examples, labelled on screen "example, to be set by Tyks". Which lines does Tyks actually use?
-
-## What works / mocked / cut
-This section is filled in at the Phase 3 test pass: it will say what is verified on the build, what is mocked (the EHR order form, CDS Hooks host, heads-up delivery and Jev) and what was cut.
+## Data sources and licences
+- **Dataset:** the synthetic microbiology dataset from the Tyks x Mylab challenge (10,000 patients, 24,571 isolates,
+  2 Oct 2023 to 27 Sep 2026). All data is synthetic. Its README states no licence, so it is never committed and the
+  app never offers it for download; it shows aggregates and synthetic line lists only.
+- **Font:** Inter ([web/fonts/](web/fonts/)), SIL Open Font License 1.1 ([web/fonts/OFL.txt](web/fonts/OFL.txt)).
+- **Python dependencies** ([requirements.txt](requirements.txt), pinned): anthropic (MIT), fastapi (MIT), numpy
+  (BSD-3-Clause), pandas (BSD-3-Clause), pydantic (MIT), scipy (BSD-3-Clause), uvicorn (BSD-3-Clause). Test and lint
+  tools, not shipped: pytest (MIT), httpx (BSD-3-Clause), ruff (MIT), playwright (Apache-2.0), prettier (MIT),
+  eslint (MIT).
+- **Clinical rule sources,** cited in the code: EUCAST Expert Rules v3.3, EUCAST Expected Resistant Phenotypes v1.2,
+  THL guidance Ohjaus 2/2020.

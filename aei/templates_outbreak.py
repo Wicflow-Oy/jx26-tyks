@@ -1,4 +1,4 @@
-"""Templates for the outbreak detectors (workstream B1): phenotype clusters, THL rule cards, count step-up, seen before.
+"""Templates for the outbreak detectors: phenotype clusters, THL rule cards, count step-up, seen before.
 
 Merged into aei.templates.TEMPLATES. Base ids there are never redefined; every id here starts with "ob_".
 Numbers only through slots: no digit appears in any literal text or title below (a test checks this). Text slots carry

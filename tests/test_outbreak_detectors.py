@@ -1,4 +1,4 @@
-"""Workstream B1: outbreak detectors (phenotype, thl, stepup, seen_before). Offline and deterministic.
+"""Outbreak detectors (phenotype, thl, stepup, seen_before). Offline and deterministic.
 Goldens from CONTRACTS.md section 5.2 and analysis 09_leadtime, 08_hidden, 47_outbreak_prob, 52_seen_before_expert_rules."""
 
 import json

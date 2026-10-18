@@ -1,11 +1,10 @@
-# Build contracts (v1, Sat 17 Oct 2026 evening)
+# Specification
 
 Product name: `aei.config.APP_NAME` (placeholder "Strainwatch"; the team decides). Never hard-code the name elsewhere.
 All data is synthetic. Python 3.12, pandas 3.0, FastAPI. Run everything with the project venv (`.venv/bin/python`; on Windows `.venv/Scripts/python.exe`). One formatter and linter: `ruff format` and `ruff check` (settings in `pyproject.toml`, line length 120).
 
-**Ground rules for every workstream**
-- Only edit the files your workstream owns (section 8). Shared files (`config.py`, `data.py`, `stats.py`, `render.py`, `signal.py`, `templates.py`, `CONTRACTS.md`, `tests/conftest.py`) are read-only; ask the integrator for a change, or note it in your report.
-- No git commits (the integrator commits). No network calls in tests. No real API calls anywhere unless an env key is set *and* the user runs it.
+**Ground rules**
+- Module responsibilities are listed in section 8. No network calls in tests. No real API calls anywhere unless an env key is set *and* the user runs it.
 - Keys only from env vars: `ANTHROPIC_API_KEY`, `JEV_API_KEY` (+ `JEV_BASE_URL`). Never log them, never return them in an API response, and never write them to disk.
 - Never write the CSVs or derived patient-level data into the repo. Caches go to `config.CACHE_DIR` (`.cache/`, gitignored).
 - **Wording:** no prediction language on screen or in text ("predicts", "forecast", "odds", "probability that", "best choice", "recommended drug", "AI predicts"). Results are S/R (never "S/I/R"). Say "unusual pattern", "typing advised" and "profile match, not typing". Never say "decoy" or "outbreak confirmed". Say "data gap, cause unknown", never "zero resistance".
@@ -58,7 +57,7 @@ Every detector returns `list[dict]` built with `signal.make_signal(...)`:
 - **Status:** `new` if the signal's id was not active at `as_of - 7 days`; `ongoing` if it was; `resolved` signals are listed for one week after they stop firing.
 - **Numbers only via slots.** A test asserts that every digit run in `text` comes from a slot value.
 
-## 4. Coverage and My ward (`aei/coverage.py`, `aei/views.py`; workstream A)
+## 4. Coverage and My ward (`aei/coverage.py`, `aei/views.py`)
 ### 4.1 Coverage cell
 `coverage.cell(rows, drug, prior_rows=None, hosp_rows=None) -> dict` for a single drug or a combo key ("MEM+VAN"):
 ```
@@ -106,7 +105,7 @@ Every detector returns `list[dict]` built with `signal.make_signal(...)`:
 - **Performance:** `my_ward` ≤ 1.5 s cold on this laptop.
 - `aei/aggregates.py` (optional, A) may precompute weekly counts to the cache to meet this.
 
-## 5. Signals and the Monday brief (`aei/detectors/*`, `aei/brief.py`; workstreams B1 and B2)
+## 5. Signals and the Monday brief (`aei/detectors/*`, `aei/brief.py`)
 Templates: the base ids in `aei/templates.py` are fixed. B1 adds ids in `aei/templates_outbreak.py`, and B2 adds ids in `aei/templates_trends.py`; both are merged automatically. B1 owns phenotype/thl/stepup/seen_before, and B2 owns the rest plus the registry and the brief. The brief imports detectors only via the registry, so it works before B1 lands.
 ### 5.1 Detectors
 Each detector is `detect(ds, as_of, rule="readme_period") -> list[signal]` and is strictly as-of. Port the analysis implementations (script numbers in brackets):
@@ -164,7 +163,7 @@ Each detector is `detect(ds, as_of, rule="readme_period") -> list[signal]` and i
 - **Data gap:** PHC-S sent no cultures 8–14 Dec 2025 (~51 expected).
 - **A VRE card on GER** by the 14 Sep 2026 brief (check `08_hidden`).
 
-## 6. Narrator, validator, Jev (`aei/narrator/*`, `aei/validator.py`, `aei/jev.py`; workstream C)
+## 6. Narrator, validator, Jev (`aei/narrator/*`, `aei/validator.py`, `aei/jev.py`)
 - `narrator.base.Narrator` (Protocol): `narrate(template_id: str, slots: dict, *, audience="infection_control", language="en") -> Narration`.
 - `Narration` is a dataclass: `text` (final, numbers rendered by code), `skeleton` (the model's text with `{slot}` placeholders), `provider`, `validated`, `fallback_reason`.
 - **Providers:**
@@ -196,7 +195,7 @@ Each detector is `detect(ds, as_of, rule="readme_period") -> list[signal]` and i
 
   Output: `{"provider": "jev", "mode": "choice"|"score"|"noul", "question": "Forward to the ED?", "answer", "score", "label": "Second opinion (Jev, experimental). Not used in prescribing alerts.", "calibration": {...}}`. It is used **only** on infection-control inbox items. It is never imported by `cds.py` or `cds_hooks.py`; a test enforces this. Read `context/tyks-brainstorm-research.md` and the dossier on Jev (TypeSafe AI, jev-1.13.0, Choice/Score/Noul). If the HTTP shape is unknown, implement a clearly-marked `JevHttpClient` guess behind the adapter, plus the fake used in tests.
 
-## 7. API, alerts, order check (`aei/api.py`, `aei/store.py`, `aei/cds.py`, `aei/cds_hooks.py`, `aei/precompute.py`; workstream D)
+## 7. API, alerts, order check (`aei/api.py`, `aei/store.py`, `aei/cds.py`, `aei/cds_hooks.py`, `aei/precompute.py`)
 FastAPI app `aei.api:app`; run with `uvicorn aei.api:app --host 127.0.0.1 --port 8765`. Bind to localhost by default. The app serves `web/` statically at `/` (the UI arrives in Phase 3; ship a placeholder `web/index.html` that lists the endpoints).
 
 | Method & path | Returns |
@@ -244,17 +243,28 @@ FastAPI app `aei.api:app`; run with `uvicorn aei.api:app --host 127.0.0.1 --port
 - `POST` endpoints validate input with pydantic models;
 - every text field rendered by the UI is plain text (the UI uses textContent).
 
-## 8. File ownership
-| Workstream | Owns (create/edit only these) |
+## 8. Module map
+| Module | Responsibility |
 |---|---|
-| Integrator (main session) | `aei/config.py`, `aei/data.py`, `aei/stats.py`, `aei/render.py`, `aei/signal.py`, `aei/phenotype_rules.py`, `aei/i18n.py`, `aei/templates.py`, `aei/templates_fi.py`, `CONTRACTS.md`, `pyproject.toml`, `tests/conftest.py`, `tests/test_data.py`, `tests/test_render.py`, `tests/test_i18n.py`, README.md, git |
-| **A Coverage & views** | `aei/coverage.py`, `aei/views.py`, `aei/aggregates.py`, `tests/test_stats.py`, `tests/test_coverage.py`, `tests/test_views.py` |
-| **B1 Outbreak detectors** | `aei/detectors/phenotype.py`, `thl.py`, `stepup.py`, `seen_before.py`, `explanations.py`, `aei/templates_outbreak.py` (a `TEMPLATES` dict merged into `aei.templates`), `tests/test_outbreak_detectors.py` |
-| **B2 Trend detectors & brief** | `aei/detectors/policy.py`, `resistance_change.py`, `outlier.py`, `expert_rules.py`, `completeness.py`, `aei/detectors/__init__.py` (the registry: `DETECTORS` = module names; import lazily, skip a missing module with a warning), `aei/brief.py`, `aei/templates_trends.py`, `tests/test_trend_detectors.py`, `tests/test_brief.py` |
-| **C Narrator, validator, Jev** | `aei/narrator/*.py`, `aei/validator.py`, `aei/jev.py`, `tests/test_validator.py`, `tests/test_narrator.py`, `tests/test_jev.py` |
-| **D API, store, CDS, precompute** | `aei/api.py`, `aei/store.py`, `aei/cds.py`, `aei/cds_hooks.py`, `aei/templates_ui.py`, `aei/precompute.py`, `web/index.html` (placeholder), `tests/test_api.py`, `tests/test_cds.py`, `tests/test_store.py` |
-
-While other workstreams are unfinished, test against their contract with fakes or monkeypatching (D especially). The integrator wires everything together and runs the full suite. In your final report, list: files written, tests (pass/fail counts), anything mocked, any contract deviation, and open questions.
+| `aei/config.py` | The one place for the product name, windows, thresholds, drug lists, local lines, demo scenarios and env settings |
+| `aei/data.py` | Loads the CSVs into the isolate table (section 1); date windows and first-isolate rules |
+| `aei/stats.py` | Jeffreys intervals, small-n states, the change test, pooled estimates, the fixed-seed generator |
+| `aei/phenotype_rules.py` | Effective S/R for one isolate and drug, and why (section 7b); shared by My ward and the order check |
+| `aei/coverage.py`, `aei/aggregates.py` | One coverage cell (section 4.1); in-memory row arrays that keep cells fast |
+| `aei/views.py` | My ward, the filter catalogue and trend series (section 4.2) |
+| `aei/signal.py` | The evidence object every detector returns (section 3) |
+| `aei/detectors/` | The registry (`__init__.py`) and one module per detector (section 5.1) |
+| `aei/brief.py` | The Monday brief: sections, status, unit map, counts, per-week cache, case-file rows (section 5.2) |
+| `aei/cds.py`, `aei/cds_hooks.py` | The order context for one order (section 7b) and its CDS Hooks 2.0 cards (section 7) |
+| `aei/templates.py`, `aei/templates_outbreak.py`, `aei/templates_trends.py`, `aei/templates_ui.py` | Every English text as a template; numbers only through slots |
+| `aei/templates_fi.py`, `aei/i18n.py` | The Finnish twin of every template, the Finnish glossary and `lang` handling |
+| `aei/render.py` | Number and date formats; renders a template with its slots |
+| `aei/narrator/`, `aei/validator.py` | Optional model wording (template, replay, Claude) with its spend and rate guard; the checks on its output (section 6) |
+| `aei/jev.py` | Optional second-opinion adapter, inert without a key and a passing calibration (section 6) |
+| `aei/store.py` | SQLite demo state per session: alerts, heads-ups, feedback, audit log (sections 7, 10) |
+| `aei/api.py`, `aei/precompute.py` | The FastAPI app and its guards (sections 7, 7b, 10); the cache-warming CLI |
+| `web/` | The static UI: HTML, CSS and ES modules, no build step |
+| `tests/` | Offline tests per module, plus `tests/test_against_source.py` (headline numbers re-derived from the raw CSVs) |
 
 ## 9. Analysis sources (read-only)
 - Scripts: `../jx26-tyks-context/analysis/tyks/NN_*.py` (the private context repo, cloned next to this one).
@@ -310,7 +320,7 @@ A mocked order form: a synthetic patient (`patient_id`; sex, age and home area f
 **Seeds:** `store.seed_demo()` inserts `config.DEMO_ALERT_SEEDS`. Each carries `profile` (the flagged antibiogram), `marker`, `resistant_to` (its reported R plus what the marker implies) and `drugs` = exactly those, and `indications`. URO ESBL, approved 9 Jun 2025: AMP, CXM, CRO, CIP, TMP; uti and bloodstream (urosepsis). ICU MRSA, approved 9 Mar 2026: every beta-lactam plus CLI; bloodstream and wound (the cluster's isolates). Seeds are visible to every session; their messages are checked against the raw data (`tests/test_against_source.py`).
 
 ## 10. Public deployment (judges use it on their own devices)
-- **Host:** UpCloud, Helsinki, behind the box's existing Traefik (`docs/HOSTING.md`). Compose project `jx-tyks`, 1 GB memory, and no published ports. `Dockerfile` and `deploy/compose.yml` are owned by the integrator.
+- **Host:** UpCloud, Helsinki, behind the box's existing Traefik (see `DEPLOY.md`). Compose project `jx-tyks`, 1 GB memory, and no published ports.
 - **No login.** The role switch "Infection control | Ward doctor" sits at the top. A guided start: replay at `config.TOUR_START_AS_OF` (just before the ICU cluster), plus "Start tour" (4–5 steps). There's a visible "Prototype · synthetic data" label on every screen.
 - **Headers:** `X-Robots-Tag: noindex, nofollow` on every response, `<meta name="robots" content="noindex">`, and `/robots.txt` disallowing everything. No analytics or trackers.
 - **Logging:** request bodies and query strings are never logged; uvicorn runs with `--no-access-log`, and the app logs only errors without bodies.

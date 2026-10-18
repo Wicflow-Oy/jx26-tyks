@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_env_local(path: Path) -> None:
-    """Local development only: the team lead puts this app's keys in builds/tyks/.env.local (gitignored). Real environment
+    """Local development only: keys may sit in .env.local at the repo root (gitignored). Real environment
     variables win. Values are never printed or logged."""
     if not path.is_file():
         return

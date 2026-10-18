@@ -1,4 +1,4 @@
-# Tyks public demo: base service. Compose project: jx-tyks. Conventions: ../../HOSTING.md (hackathon folder).
+# Tyks public demo: base service. Compose project: jx-tyks. Operator guide: ../DEPLOY.md.
 # Always combine with ONE proxy file:
 #   Traefik:      -f deploy/compose.yml -f deploy/compose.traefik.yml
 #   Caddy/nginx:  -f deploy/compose.yml -f deploy/compose.port.yml

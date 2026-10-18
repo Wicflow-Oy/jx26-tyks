@@ -1,5 +1,4 @@
-"""Workstream B2: the Monday brief (CONTRACTS.md section 5.2). Offline and deterministic; caches go to a temp dir.
-Parts that depend on workstream B1's detectors (phenotype / thl / seen_before) skip until those modules load."""
+"""The Monday brief (CONTRACTS.md section 5.2). Offline and deterministic; caches go to a temp dir."""
 
 import json
 import os
@@ -62,7 +61,7 @@ def briefs(ds, tmp_path_factory):
 def need(*names):
     missing = [n for n in names if registry.load(n) is None]
     if missing:
-        pytest.skip(f"workstream B1 detector(s) not available yet: {missing}")
+        pytest.skip(f"detector(s) not available: {missing}")
 
 
 # ---------------------------------------------------------------- shape, map, counts, quiet
