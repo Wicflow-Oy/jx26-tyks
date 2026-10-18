@@ -65,7 +65,7 @@ export const en = {
 
   cultures: "Cultures this week by unit",
 
-  "map.title": "Quiet this week",
+  "map.title": "Ward map",
   "map.count": "{quiet} of {units}",
   "map.schematic": "Schematic, not a floor plan",
   "map.units": "Hospital units",
@@ -140,7 +140,7 @@ export const fi = {
 
   cultures: "Viljelyt tällä viikolla yksiköittäin",
 
-  "map.title": "Ilman signaaleja",
+  "map.title": "Osastokartta",
   "map.count": "{quiet}/{units}",
   "map.schematic": "Kaavio, ei pohjapiirros",
   "map.units": "Sairaalan yksiköt",

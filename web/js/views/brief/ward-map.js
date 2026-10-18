@@ -1,5 +1,6 @@
-// The ward map: a schematic 3×3 plan of the hospital units and the cross of primary-care home areas. Each tile shows
-// its code, the API's map state as a word, and the glyph of its highest-priority signal. Then the quiet sentence,
+// The ward map: a schematic 3×3 plan of the hospital units and the cross of primary-care home areas, coloured like a
+// heat map by each unit's most serious open item (P1 red, P2 orange, P3 yellow, info pale). Each tile also shows its
+// code, the API's map state as a word and the priority glyph, so colour is never the only signal. Then the quiet sentence,
 // what quiet means, and the legend. A tile opens its top signal's case file.
 
 import { priorityLabel, tile } from "../../components/badges.js";
@@ -95,7 +96,12 @@ function unitTile(brief, unit, label, code, shown = code) {
     "button",
     {
       type: "button",
-      class: ["unit", lit && "lit", unit.state === "no_data" && "gap"],
+      class: [
+        "unit",
+        lit && "lit",
+        lit && status.glyph && `heat-${status.glyph.toLowerCase()}`,
+        unit.state === "no_data" && "gap",
+      ],
       dataset: { unit: code },
       title: label,
       "aria-label": [label, status.word, ids.length > 0 && t("shell.unit.count", { n: ids.length })]
@@ -124,7 +130,15 @@ function legend() {
   return h(
     "ul",
     { class: "legend", "aria-label": t("brief.map.legend") },
-    PRIORITIES.map((priority) => h("li", null, tile(priority, "xs"), priorityLabel(priority))),
+    PRIORITIES.map((priority) =>
+      h(
+        "li",
+        null,
+        h("span", { class: ["lg-heat", `heat-${priority.toLowerCase()}`], "aria-hidden": "true" }),
+        tile(priority, "xs"),
+        priorityLabel(priority),
+      ),
+    ),
     h("li", null, h("span", { class: "lg-quiet", "aria-hidden": "true" }), t("shell.unit.quiet")),
     h("li", null, h("span", { class: "lg-gap", "aria-hidden": "true" }), t("brief.map.gap")),
   );

@@ -45,6 +45,7 @@ export async function render(root, ctx) {
     head,
     dek(brief),
     countCapsules(brief),
+    wardMap(brief, filters),
     signalSections({
       ...page,
       asOf: state.asOf,
@@ -52,7 +53,6 @@ export async function render(root, ctx) {
       lagDays: meta.result_lag_days,
     }),
     dataQuality(brief, meta.wards ?? []),
-    wardMap(brief, filters),
     h("footer", { class: "foot" }, h("span", null, brief.footer), h("span", null, t("shell.prototype"))),
   );
   // the default selection follows each replay week until someone opens or closes a pane
