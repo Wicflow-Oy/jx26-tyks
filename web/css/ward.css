@@ -1,0 +1,966 @@
+/* My ward (js/views/ward.js, js/views/ward/*) and the trend (js/views/trend.js): scope bar, banners, lead, the
+   coverage table of dumbbell rows, how to read a row, organism mix, trend chart. Colours come from tokens.css only. */
+
+/* ---------------------------------------------------------------- scope bar */
+.scopebar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: var(--s4) 0 0;
+}
+
+.scopebar .sep {
+  width: 0.5px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 2px;
+}
+
+/* ---------------------------------------------------------------- banners */
+.banners {
+  display: grid;
+  gap: var(--s2);
+  margin: var(--s5) 0 0;
+}
+
+.banner {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: var(--s3);
+  align-items: center;
+  padding: var(--s3) 14px;
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--sh-1);
+}
+
+.banner.P1 {
+  background: linear-gradient(90deg, var(--p1-wash), var(--surface) 60%);
+}
+
+.banner .t {
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.banner .t b {
+  font-weight: 650;
+  margin-right: 6px;
+}
+
+.banner .t span {
+  color: var(--ink-2);
+}
+
+.banner .case-link {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- lead sentence */
+.lead {
+  margin: 22px 0 0;
+  max-width: 660px;
+  font-size: 19px;
+  line-height: 28px;
+  font-weight: 450;
+  letter-spacing: -0.015em;
+  text-wrap: pretty;
+}
+
+.lead b {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.lead .tail {
+  display: block;
+  margin-top: var(--s2);
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 22px;
+  letter-spacing: -0.008em;
+}
+
+/* ---------------------------------------------------------------- coverage table */
+.abg {
+  container: coverage / inline-size;
+}
+
+.abg-h {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.abg-h h2 {
+  font: inherit;
+}
+
+.abg-h .win {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.abg-cols {
+  display: grid;
+  grid-template-columns: 192px minmax(110px, 1fr) 118px 96px 10px;
+  gap: 0 14px;
+  align-items: center;
+}
+
+.abg-head {
+  padding: 0 var(--s4) var(--s2);
+  align-items: end;
+}
+
+.wh {
+  display: grid;
+  gap: 1px;
+}
+
+.wh b {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.wh span {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.axis {
+  position: relative;
+  display: block;
+  height: 30px;
+}
+
+.axis span {
+  position: absolute;
+  bottom: 0;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--ink-2);
+  transform: translateX(-50%);
+  font-variant-numeric: tabular-nums;
+}
+
+.axis .start {
+  left: 0;
+  transform: none;
+}
+
+.axis .stop {
+  left: 100%;
+  transform: translateX(-100%);
+}
+
+.axis .loc {
+  bottom: 15px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.axis-m {
+  display: none;
+}
+
+.drow {
+  position: relative;
+  width: 100%;
+  min-height: 62px;
+  padding: 10px var(--s4);
+  text-align: left;
+  transition: background-color var(--t-fast);
+}
+
+.drow:hover {
+  background: var(--hover);
+}
+
+.drow[aria-current="true"] {
+  background: var(--accent-wash);
+}
+
+.drow .chev {
+  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+}
+
+.dname {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dname b {
+  font-size: 14px;
+  line-height: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.dname .sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+.dname .chip,
+.keyline .chip,
+.trend-weeks .chip {
+  min-height: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+  border-radius: var(--r-xs);
+}
+
+/* the dumbbell: one shared 0-100 axis; the dashed local-setting rule runs through every row */
+.db {
+  position: relative;
+  display: block;
+  height: 42px;
+  align-self: stretch;
+  margin: -10px 0;
+}
+
+.db::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--line-2);
+}
+
+.db .rule {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed var(--ink-3);
+}
+
+.db .band {
+  position: absolute;
+  top: calc(50% - 5px);
+  height: 10px;
+  border-radius: 5px;
+  background: var(--band);
+}
+
+.db .conn {
+  position: absolute;
+  top: calc(50% - 1px);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--ink-3);
+}
+
+.db .conn.down {
+  background: var(--p2);
+}
+
+.db .conn.up {
+  background: var(--ink);
+}
+
+.db .d12 {
+  position: absolute;
+  top: calc(50% - 5.5px);
+  width: 11px;
+  height: 11px;
+  margin-left: -5.5px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--ink-2);
+}
+
+.db .d4 {
+  position: absolute;
+  top: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.db .obs {
+  position: absolute;
+  top: calc(50% - 8px);
+  width: 2px;
+  height: 16px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--ink-2);
+}
+
+.wcell {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.wcell .v {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.wcell .v b {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.wcell .v span,
+.wcell .x {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wcell .wl {
+  display: none;
+}
+
+/* disclosures: combinations and the drugs not shown */
+.sub-sum {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 24px;
+  width: max-content;
+  margin: 18px 4px var(--s2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.sub-sum .count {
+  font-weight: 500;
+}
+
+.notshown > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  width: max-content;
+  margin: var(--s3) 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.notshown > summary .disc {
+  color: var(--accent);
+}
+
+.notshown ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 4px var(--s4);
+  background: var(--surface);
+  border-radius: var(--r);
+  box-shadow: var(--sh-1);
+}
+
+.notshown li {
+  padding: 9px 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ink-2);
+  box-shadow: inset 0 -0.5px 0 var(--line);
+}
+
+.notshown li:last-child {
+  box-shadow: none;
+}
+
+/* narrow tables: name and chip on one line, a full-width dumbbell, then one line per window */
+@container coverage (max-width: 600px) {
+  .abg-cols {
+    grid-template-columns: minmax(0, 1fr) 10px;
+    gap: 2px var(--s3);
+  }
+
+  .abg-head {
+    display: none;
+  }
+
+  .axis-m {
+    display: block;
+    margin: 0 var(--s4) 6px;
+  }
+
+  .axis-m .axis {
+    height: 18px;
+  }
+
+  .axis-m .axis .loc {
+    bottom: 0;
+  }
+
+  .drow {
+    padding: 11px var(--s4) var(--s3);
+  }
+
+  .drow .dname {
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s2);
+  }
+
+  .drow .dname b {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .drow .dname .sub {
+    flex: none;
+    flex-wrap: nowrap;
+  }
+
+  .drow .chev {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .drow .db {
+    grid-column: 1 / 3;
+    grid-row: 2;
+    height: 26px;
+    margin: 2px 0;
+  }
+
+  .drow .wcell {
+    grid-column: 1 / 3;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .drow .w4 {
+    grid-row: 3;
+  }
+
+  .drow .w12 {
+    grid-row: 4;
+  }
+
+  .wcell .wl {
+    display: inline;
+    flex: none;
+    width: 62px;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+
+  .wcell .v b {
+    font-size: 14px;
+  }
+
+  .w12 .v b {
+    font-weight: 550;
+  }
+
+  .wcell .x::before {
+    content: "· ";
+  }
+}
+
+/* ---------------------------------------------------------------- how to read a row */
+.keycard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.keycard > div {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 14px var(--s4);
+}
+
+.keycard > div + div {
+  box-shadow: inset 0.5px 0 0 var(--line);
+}
+
+.keycard h3 {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.keycard p {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+.keycard p .num {
+  color: var(--ink);
+}
+
+.keycard .db {
+  height: 28px;
+  margin: 0;
+}
+
+.keyline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 10px 4px 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+.keyline > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kd12,
+.kd4 {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+}
+
+.kd12 {
+  box-shadow: inset 0 0 0 2px var(--ink-2);
+}
+
+.kd4 {
+  background: var(--ink);
+}
+
+.kband {
+  width: 22px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--band);
+}
+
+.kobs {
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--ink-2);
+}
+
+.krule {
+  width: 0;
+  height: 14px;
+  border-left: 1px dashed var(--ink-3);
+}
+
+/* ---------------------------------------------------------------- organism mix: stacked greys */
+.mix {
+  display: grid;
+  gap: var(--s4);
+  padding: 14px var(--s4);
+}
+
+.mixrow {
+  display: grid;
+  gap: 7px;
+}
+
+.mixrow .h {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.mixrow .h b {
+  font-weight: 600;
+}
+
+.mixrow .h span {
+  color: var(--ink-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stack {
+  display: flex;
+  gap: 2px;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.stack i {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+}
+
+.mixlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+.mixlist > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mixlist b {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sw {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 2px;
+  border-radius: 2px;
+}
+
+/* eight greys mixed from the ink token, darkest first */
+.tone-0 {
+  background: var(--ink);
+}
+
+.tone-1 {
+  background: color-mix(in srgb, var(--ink) 80%, var(--surface));
+}
+
+.tone-2 {
+  background: color-mix(in srgb, var(--ink) 64%, var(--surface));
+}
+
+.tone-3 {
+  background: color-mix(in srgb, var(--ink) 50%, var(--surface));
+}
+
+.tone-4 {
+  background: color-mix(in srgb, var(--ink) 38%, var(--surface));
+}
+
+.tone-5 {
+  background: color-mix(in srgb, var(--ink) 28%, var(--surface));
+}
+
+.tone-6 {
+  background: color-mix(in srgb, var(--ink) 20%, var(--surface));
+}
+
+.tone-7 {
+  background: color-mix(in srgb, var(--ink) 13%, var(--surface));
+}
+
+/* ---------------------------------------------------------------- trend: pane and phone card */
+.trendcard {
+  margin: 18px 0 0;
+  padding: var(--s4) var(--s4) 14px;
+  background: var(--surface);
+  border-radius: var(--r);
+  box-shadow: var(--sh-1);
+}
+
+.trendcard .tchart {
+  box-shadow: none;
+  background: var(--bg);
+}
+
+.trend-head {
+  padding-top: 6px;
+}
+
+.trend-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.trend-title {
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.trendcard .trend-title {
+  font-size: 20px;
+  line-height: 26px;
+}
+
+.trend-sub {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ink-2);
+}
+
+.readout {
+  margin: var(--s4) 0 6px;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.readout b {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.cap {
+  margin: 0 0 var(--s3);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+.tchart {
+  margin: 0;
+  padding: var(--s3) 10px 6px;
+}
+
+.tchart svg {
+  display: block;
+  overflow: visible;
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+.tchart text {
+  font-size: 11px;
+  fill: var(--ink-2);
+}
+
+.tchart text.strong {
+  font-weight: 700;
+  fill: var(--ink);
+}
+
+.tchart text.value {
+  font-size: 12px;
+}
+
+.tchart .grid {
+  stroke: var(--line);
+}
+
+.tchart .local,
+.trend-legend .local {
+  stroke: var(--ink);
+  stroke-dasharray: 1.5 3;
+  stroke-linecap: round;
+}
+
+.tchart .band {
+  fill: var(--band);
+  fill-opacity: 0.45;
+}
+
+.tchart .est,
+.trend-legend .est {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.tchart .pt,
+.tchart .last {
+  fill: var(--ink);
+}
+
+.tchart .last {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.tchart .hatch {
+  fill: var(--ink-3);
+}
+
+.tchart .stub {
+  stroke: var(--ink-3);
+  stroke-width: 0.6;
+}
+
+.tchart .chg,
+.trend-legend .chg {
+  fill: var(--p2);
+  stroke: var(--surface);
+  stroke-width: 1.2;
+}
+
+.trend-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 10px 2px var(--s3);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+.trend-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kstub {
+  width: 7px;
+  height: 10px;
+  border: 0.6px solid var(--ink-3);
+  background: repeating-linear-gradient(45deg, var(--ink-3) 0 1px, transparent 1px 3px);
+}
+
+.trend-weeks {
+  margin: 22px 0 10px;
+}
+
+.trend-weeks-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-bottom: 6px;
+}
+
+.trend-weeks-h h3 {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 650;
+  letter-spacing: -0.016em;
+}
+
+.trend-weeks-h span {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.wk-tab {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.wk-tab th,
+.wk-tab td {
+  padding: var(--s2) 0;
+  border-bottom: 0.5px solid var(--line);
+  text-align: left;
+  font-weight: 450;
+}
+
+.wk-tab thead th {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.wk-tab b {
+  font-weight: 650;
+}
+
+.wk-tab .r {
+  text-align: right;
+}
+
+.wk-tab tr:last-child > * {
+  border-bottom: 0;
+}
+
+.trend-choose .linkbtn {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 var(--s4);
+  justify-content: space-between;
+}
+
+/* ---------------------------------------------------------------- phones */
+@media (max-width: 640px) {
+  .scopebar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin: 14px calc(-1 * var(--s4)) 0;
+    padding: 2px 40px 4px var(--s4);
+    scrollbar-width: none;
+    mask-image: linear-gradient(to right, var(--ink) calc(100% - 36px), transparent);
+  }
+
+  .scopebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .abg-h .wl2 {
+    display: none;
+  }
+
+  .banner {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .banner .case-link {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .lead {
+    font-size: 17px;
+    line-height: 25px;
+  }
+
+  .keycard > div + div {
+    box-shadow: inset 0 0.5px 0 var(--line);
+  }
+}
+
+/* the empty result keeps a way back to the whole unit */
+.empty-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--s3);
+  padding-right: var(--s4);
+}

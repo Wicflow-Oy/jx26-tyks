@@ -1,0 +1,213 @@
+/* Replay (js/replay/*): the week scrubber shared by the desktop rail and the phone sheet, the rail's status, and
+   the replay bottom sheet on tablets and phones. The rail's position in the frame is in shell.css. */
+
+/* ---------------------------------------------------------------- week scrubber (ticks.js) */
+.ticks {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: var(--rail);
+}
+
+.ticks svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  font-family: var(--font);
+  font-variant-numeric: tabular-nums;
+}
+
+.tk-base {
+  stroke: var(--line);
+}
+
+.tk {
+  stroke: var(--ink-2);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+/* weeks after the as-of date are dimmed on purpose; aria-valuetext reads them */
+.tk.future {
+  stroke: var(--future);
+}
+
+.tk-p1 {
+  fill: var(--p1);
+}
+
+.tk-tour {
+  fill: var(--ink);
+}
+
+.tk-head {
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.tk-label {
+  font-size: 11px;
+  fill: var(--ink-2);
+}
+
+.tk-pill {
+  fill: var(--ink);
+}
+
+.tk-pill-text {
+  font-size: 11px;
+  font-weight: 650;
+  fill: var(--on-ink);
+}
+
+/* the week under the mouse: a hairline and a quiet date pill */
+.tk-hover {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.tk-pill.hover {
+  fill: var(--fill-2);
+}
+
+.tk-pill-text.hover {
+  fill: var(--ink);
+}
+
+/* the real control is a transparent range input over the drawing; its thumb is as wide as the drawing's side
+   padding (ticks.js PAD × 2), so a pointer picks the week drawn under it */
+.ticks input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  appearance: none;
+  background: none;
+}
+
+.ticks input::-webkit-slider-thumb {
+  appearance: none;
+  width: 8px;
+  height: 100%;
+}
+
+.ticks input::-moz-range-thumb {
+  width: 8px;
+  height: 100%;
+  border: 0;
+}
+
+.ticks:has(input:focus-visible)::after {
+  content: "";
+  position: absolute;
+  inset: 2px -6px;
+  border-radius: var(--r-sm);
+  outline: 2px solid var(--accent);
+  pointer-events: none;
+}
+
+.rail-status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.rail-status .linkbtn {
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- replay sheet (compact layouts) */
+.replay-sheet {
+  position: fixed;
+  z-index: 60;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  box-shadow: var(--sh-3);
+  padding: 10px 16px calc(20px + env(safe-area-inset-bottom));
+  transform: translateY(16px);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--t-med) var(--ease),
+    transform var(--t-med) var(--ease),
+    visibility 0s var(--t-med);
+}
+
+.replay-sheet.open {
+  opacity: 1;
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity var(--t-med) var(--ease),
+    transform var(--t-med) var(--ease);
+}
+
+.replay-sheet .grabber {
+  display: block;
+}
+
+.scrub-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scrub-read {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 650;
+  letter-spacing: -0.014em;
+  font-variant-numeric: tabular-nums;
+}
+
+.scrub-read span {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+.scrub-sub {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+
+.replay-sheet .ticks {
+  height: 64px;
+  margin: 14px 0 0;
+}
+
+.scrub-ctrls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.scrub-ctrls .btn-plain {
+  padding: 0 8px;
+}
+
+@media (min-width: 1024px) {
+  .replay-sheet {
+    display: none;
+  }
+}

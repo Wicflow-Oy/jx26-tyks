@@ -1,0 +1,708 @@
+/* Shell: sidebar, toolbar, the replay rail's frame, page head, pane, phone top bar and tab bar.
+   >=1280: sidebar + middle column + pane · 1024-1279: pane as a drawer · <1024: compact shell (tablet and phone). */
+body {
+  --left: calc(var(--sb) + var(--edge) * 2);
+  --right: 0px;
+}
+
+/* faint light behind the glass sidebar, so the vibrancy reads; both gradients fade out before the sidebar's edge */
+.wash {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: calc(var(--sb) + var(--edge) * 2);
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(240px 280px at 40px 140px, var(--wash-accent), transparent 70%),
+    radial-gradient(200px 320px at 120px 700px, var(--wash-shade), transparent 70%);
+}
+
+/* ---------------------------------------------------------------- sidebar (the only backdrop-filter) */
+.sidebar {
+  position: fixed;
+  z-index: 30;
+  top: var(--edge);
+  bottom: var(--edge);
+  left: var(--edge);
+  width: var(--sb);
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-sidebar);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 10px 12px;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar,
+  .tabbar {
+    background: var(--glass-solid);
+  }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px 16px 8px;
+}
+
+.brand-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+
+.mark {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--mark);
+  color: var(--on-ink);
+  box-shadow: var(--sh-mark);
+}
+
+.mark-dot {
+  fill: var(--mark-dot);
+  stroke: var(--mark-edge);
+}
+
+.mark.sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+
+.brand-name {
+  font-size: 15px;
+  line-height: 18px;
+  font-weight: 650;
+  letter-spacing: -0.014em;
+}
+
+.brand-sub {
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--ink-2);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-scroll {
+  flex: 1;
+  overflow: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+  scrollbar-width: none;
+}
+
+.side-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.side-group {
+  margin: 4px 0 16px;
+}
+
+.side-h {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+  padding: 4px 8px 6px;
+  letter-spacing: 0.02em;
+}
+
+.side-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  line-height: 17px;
+  font-weight: 450;
+  text-align: left;
+  color: var(--ink);
+  transition: background-color var(--t-fast);
+}
+
+.side-item:hover {
+  background: var(--hover);
+}
+
+.side-item[aria-current="page"] {
+  background: var(--pressed);
+  font-weight: 600;
+}
+
+.side-item .lbl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-item .cnt {
+  font-size: 12px;
+  color: var(--ink-2);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.side-item .ico {
+  color: var(--ink);
+  opacity: 0.8;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  flex: none;
+}
+
+.side-item .slot {
+  width: 18px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+}
+
+.side-item .code {
+  font-weight: 600;
+  width: 46px;
+  flex: none;
+}
+
+.side-item .code + .lbl {
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.side-note {
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+.side-foot {
+  padding: 12px 8px 2px;
+  border-top: 0.5px solid var(--line);
+  margin-top: 6px;
+  display: grid;
+  gap: 8px;
+}
+
+.status-line {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+/* ---------------------------------------------------------------- toolbar and replay rail (solid, so nothing ghosts through) */
+.toolbar {
+  position: fixed;
+  z-index: 25;
+  top: 0;
+  left: var(--left);
+  right: var(--right);
+  height: var(--tb);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: 0 var(--s6);
+  background: var(--bg);
+  container: toolbar / inline-size;
+}
+
+.tb-title {
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity var(--t-med),
+    transform var(--t-med);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scrolled .tb-title {
+  opacity: 1;
+  transform: none;
+}
+
+.tb-right {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: none;
+}
+
+.asof-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
+/* a fixed slot as wide as the longest date, so the controls beside it stay put while Play steps the weeks */
+.asof-label b {
+  display: inline-block;
+  min-width: 7.6em;
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* With the pane open the toolbar narrows: Start tour keeps its icon and the date drops "As of" (still read out). */
+@container toolbar (max-width: 620px) {
+  .tb-tour .lbl {
+    display: none;
+  }
+
+  .tb-tour {
+    padding: 0 7px;
+  }
+}
+
+@container toolbar (max-width: 540px) {
+  .asof-label svg {
+    display: none;
+  }
+
+  .asof-label .pre {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+.rail {
+  position: fixed;
+  z-index: 24;
+  top: var(--tb);
+  left: var(--left);
+  right: var(--right);
+  height: var(--rail);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: 0 var(--s6);
+  background: var(--bg);
+  transition: box-shadow var(--t-med);
+}
+
+.scrolled .rail {
+  box-shadow: 0 0.5px 0 var(--line);
+}
+
+/* ---------------------------------------------------------------- middle column */
+.main {
+  position: relative;
+  z-index: 1;
+  margin-left: var(--left);
+  margin-right: var(--right);
+  padding: calc(var(--tb) + var(--rail) + 18px) var(--s7) 120px;
+  min-height: 100vh;
+  transition: margin-right var(--t-med) var(--ease);
+}
+
+.col {
+  max-width: var(--col);
+  margin: 0 auto;
+}
+
+.pagehead {
+  padding: 6px 0 4px;
+}
+
+.dateline {
+  margin-top: 6px;
+  color: var(--ink-2);
+}
+
+.dateline b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.m-only,
+.mtop,
+.tabbar {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- pane: case file or trend */
+.pane {
+  position: fixed;
+  z-index: 27;
+  top: var(--edge);
+  right: var(--edge);
+  bottom: var(--edge);
+  width: var(--pane);
+  background: var(--surface);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateX(16px);
+  transition:
+    opacity var(--t-med) var(--ease),
+    transform var(--t-med) var(--ease),
+    visibility 0s var(--t-med);
+}
+
+.pane-open .pane {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--t-med) var(--ease),
+    transform var(--t-med) var(--ease);
+}
+
+.pane-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 10px 0 20px;
+  flex: none;
+  border-bottom: 0.5px solid transparent;
+  transition: border-color var(--t-med);
+}
+
+.pane-top.scrolled {
+  border-bottom-color: var(--line);
+}
+
+.pane-top .grow {
+  flex: 1;
+}
+
+.pane-top .back,
+.pane-top .capsule {
+  display: none;
+}
+
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 4px 20px 28px;
+  overscroll-behavior: contain;
+}
+
+.pane-actions {
+  flex: none;
+  padding: 12px 16px 14px;
+  border-top: 0.5px solid var(--line);
+  background: var(--surface);
+  display: grid;
+  gap: 8px;
+}
+
+/* side by side when both labels fit, else stacked full width; the bar never scrolls sideways */
+.pane-actions .btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pane-actions .btns .btn {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pane-actions .note {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+  text-align: center;
+}
+
+@media (min-width: 1280px) {
+  .pane-open {
+    --right: calc(var(--pane) + var(--edge) * 2);
+  }
+}
+
+/* 1024-1279: the pane is a drawer over a scrim */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .pane-open .pane {
+    z-index: 57;
+    box-shadow: var(--sh-3);
+  }
+
+  .pane-open .scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ---------------------------------------------------------------- compact shell: tablet and phone */
+@media (max-width: 1023px) {
+  .sidebar,
+  .toolbar,
+  .rail,
+  .wash {
+    display: none;
+  }
+
+  body {
+    --left: 0px;
+    --right: 0px;
+  }
+
+  .main {
+    padding: 0 16px calc(var(--tabbar) + 44px + env(safe-area-inset-bottom));
+  }
+
+  .col {
+    max-width: 680px;
+  }
+
+  .m-only {
+    display: flex;
+  }
+
+  .mtop {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    height: 52px;
+    margin: 0 -16px;
+    padding: 0 12px 0 16px;
+    background: var(--bg);
+    transition: box-shadow var(--t-med);
+  }
+
+  .mtop.scrolled {
+    box-shadow: 0 0.5px 0 var(--line);
+  }
+
+  /* a lighter capsule leaves the page title room in the bar on phones */
+  .mtop .capsule {
+    gap: 5px;
+    padding: 0 7px 0 6px;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .swapname {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: 20px;
+    overflow: hidden;
+  }
+
+  .swapname > span {
+    position: absolute;
+    left: 0;
+    top: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    line-height: 20px;
+    font-weight: 650;
+    transition:
+      opacity var(--t-med),
+      transform var(--t-med);
+  }
+
+  .mt-title {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  .mtop.scrolled .mt-title {
+    opacity: 1;
+    transform: none;
+  }
+
+  .mtop.scrolled .mt-brand {
+    opacity: 0;
+  }
+
+  .m-role {
+    margin: 4px 0 6px;
+  }
+
+  .m-role .seg {
+    width: 100%;
+  }
+
+  .m-role .seg button {
+    flex: 1;
+  }
+
+  .pagehead {
+    padding: 14px 0 0;
+  }
+
+  .m-asof {
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .asof-pill {
+    min-width: 0;
+  }
+
+  .asof-pill > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .tabbar {
+    display: flex;
+    position: fixed;
+    z-index: 40;
+    left: 50%;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    gap: 2px;
+    padding: 4px;
+    border-radius: 26px;
+    background: var(--glass-bar);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: var(--sh-tabbar);
+  }
+
+  .tabbar button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    width: 80px;
+    height: 50px;
+    border-radius: 22px;
+    font-size: 11px;
+    line-height: 14px;
+    font-weight: 600;
+    color: var(--ink-2);
+  }
+
+  .tabbar button[aria-current="page"] {
+    background: var(--pressed);
+    color: var(--ink);
+  }
+
+  /* the pane becomes a pushed full-screen page */
+  .pane {
+    inset: 0;
+    width: auto;
+    border-radius: 0;
+    z-index: 57;
+    transform: translateX(24px);
+  }
+
+  .pane-top {
+    height: 52px;
+    padding: 0 12px 0 6px;
+  }
+
+  .pane-top .back {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 36px;
+    padding: 0 8px 0 4px;
+    color: var(--accent);
+    font-size: 15px;
+    font-weight: 500;
+    border-radius: var(--r-sm);
+  }
+
+  .pane-top .capsule {
+    display: inline-flex;
+  }
+
+  .pane-top .close,
+  .pane-top .eyebrow {
+    display: none;
+  }
+
+  .pane-scroll {
+    padding: 4px 16px 24px;
+  }
+
+  .pane-actions {
+    padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+  }
+
+  .sheet {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+    border-radius: 20px 20px 0 0;
+    transform: translateY(16px);
+    padding: 10px 16px calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .sheet.open {
+    transform: none;
+  }
+
+  .sheet .grabber {
+    display: block;
+  }
+
+  .toast {
+    bottom: calc(var(--tabbar) + 30px);
+  }
+}
+
+@media (max-width: 640px) {
+  .t-large {
+    font-size: 32px;
+    line-height: 38px;
+  }
+
+  .tabbar button {
+    width: 76px;
+  }
+}

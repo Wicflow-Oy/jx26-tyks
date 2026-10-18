@@ -1,0 +1,537 @@
+/* Monday brief (js/views/brief.js, js/views/brief/*): dek, count capsules, rows, the P1 hero, policy rows,
+   data quality and the ward map. Shared case-file parts (bars, epi curve) live in case.css. */
+
+/* ---------------------------------------------------------------- dek and count capsules */
+.dek {
+  margin: 18px 0 20px;
+  max-width: 640px;
+  font-size: 21px;
+  line-height: 29px;
+  font-weight: 500;
+  letter-spacing: -0.017em;
+  text-wrap: pretty;
+}
+
+.dek .q {
+  color: var(--ink-2);
+}
+
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.cc {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px 0 6px;
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--sh-1);
+}
+
+.cc .n {
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.cc .l {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.counts .aside {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- rows: priority | title and text | state and advice | chevron */
+.rows {
+  --sep-inset: 58px;
+}
+
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 140px 10px;
+  align-items: start;
+  gap: 0 14px;
+  width: 100%;
+  padding: 14px;
+  text-align: left;
+  transition: background-color var(--t-fast);
+}
+
+button.row:hover {
+  background: var(--surface-hover);
+}
+
+.row[aria-current="true"] {
+  background: var(--accent-wash);
+}
+
+.row:focus-visible {
+  outline-offset: -2px;
+  border-radius: var(--r);
+}
+
+.row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+}
+
+.row-title .k {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+.row-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.row-text.full {
+  display: block;
+}
+
+.row-text b {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.row-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding-top: 1px;
+  text-align: right;
+}
+
+/* long advice ("Review the empirical UTI guidance") wraps inside the fixed column */
+.row-meta .chip {
+  max-width: 100%;
+  white-space: normal;
+  text-align: right;
+}
+
+.chev {
+  padding-top: 4px;
+  color: var(--ink-3);
+  opacity: 0.55;
+  transition: opacity var(--t-fast);
+}
+
+.row:hover .chev {
+  opacity: 1;
+}
+
+/* a resolved item stays listed one week, visibly quieter */
+.row.is-resolved .row-title {
+  color: var(--ink-2);
+  font-weight: 550;
+}
+
+.row.is-resolved .tile {
+  opacity: 0.6;
+}
+
+.line-row .plabel {
+  color: var(--ink-2);
+}
+
+/* under 540px of list width the right column drops below the text */
+@container (max-width: 540px) {
+  .row {
+    grid-template-columns: 30px minmax(0, 1fr) 10px;
+  }
+
+  .row-meta {
+    grid-column: 2;
+    grid-row: 2;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    margin-top: 8px;
+    text-align: left;
+  }
+
+  .row .chev {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
+/* count chips under a row's text and in the hero */
+.row-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.vs {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+  padding: 3px 10px;
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.vs b {
+  color: var(--ink);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.vs i {
+  width: 1px;
+  height: 12px;
+  background: var(--line);
+}
+
+/* ---------------------------------------------------------------- P1 hero: only the top open P1 */
+.hero {
+  position: relative;
+  margin: 0 0 12px;
+  padding: 18px 20px 16px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, var(--p1-wash), var(--surface) 140px);
+  box-shadow: var(--sh-2);
+  cursor: pointer;
+  transition: box-shadow var(--t-fast);
+}
+
+.hero[aria-current="true"] {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--sh-2);
+}
+
+.hero-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.hero-kicker {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.hero-kicker b {
+  color: var(--p1);
+  font-weight: 650;
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero h3 {
+  margin: 12px 0 6px;
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 680;
+  letter-spacing: -0.021em;
+}
+
+.hero .lede {
+  max-width: 620px;
+  font-size: 15px;
+  line-height: 22px;
+  text-wrap: pretty;
+}
+
+.hero .epi-wrap {
+  margin: 14px -4px 0;
+  padding: 10px 4px 0;
+  border-top: 0.5px solid var(--line);
+}
+
+.hero-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* ---------------------------------------------------------------- data quality disclosure */
+.dq > summary {
+  list-style: none;
+}
+
+.dq > summary .sec-h {
+  margin-bottom: 10px;
+}
+
+.cultures {
+  margin-top: 10px;
+  padding: 14px 16px;
+}
+
+.cultures .eyebrow {
+  margin-bottom: 8px;
+}
+
+/* ---------------------------------------------------------------- ward map: 3×3 plan and the home-area cross */
+.mapcard {
+  display: grid;
+  gap: 16px;
+  padding: 16px 16px 14px;
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--sh-1);
+}
+
+.maprow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px 32px;
+}
+
+.mapblk .eyebrow {
+  margin: 0 0 8px;
+}
+
+.plan {
+  display: grid;
+  grid-template-columns: repeat(3, 96px);
+  gap: 6px;
+}
+
+.cross {
+  display: grid;
+  grid-template-columns: repeat(3, 76px);
+  grid-template-rows: repeat(3, 52px);
+  gap: 6px;
+}
+
+.unit {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 100%;
+  height: 64px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  text-align: left;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--line);
+  transition:
+    background-color var(--t-fast),
+    box-shadow var(--t-fast);
+}
+
+.cross .unit {
+  height: 52px;
+  padding: 7px 8px;
+  border-radius: 9px;
+}
+
+.unit:hover {
+  background: var(--fill);
+}
+
+.unit.lit {
+  background: var(--surface);
+  box-shadow: var(--sh-1);
+}
+
+/* data gap: hatched with a dashed outline (DESIGN §6); the words sit on a solid patch, not on the lines */
+.unit.gap {
+  background: var(--hatch), var(--surface);
+  border: 1px dashed var(--line-strong);
+  box-shadow: none;
+}
+
+.unit.gap .u-state {
+  align-self: flex-start;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.u-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.u-code {
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.cross .u-code {
+  font-size: 12px;
+}
+
+.u-state {
+  font-size: 11px;
+  line-height: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.unit.lit .u-state {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.map-side {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 0.5px solid var(--line);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ink-2);
+}
+
+.quietline {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.quietline .q {
+  color: var(--ink-2);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lg-quiet,
+.lg-gap {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.lg-quiet {
+  background: var(--bg);
+  box-shadow: inset 0 0 0 0.5px var(--line-strong);
+}
+
+.lg-gap {
+  background: var(--hatch), var(--surface);
+  border: 1px dashed var(--line-strong);
+}
+
+/* ---------------------------------------------------------------- phones and tablets */
+@media (max-width: 1023px) {
+  .dek {
+    margin: 16px 0 18px;
+    font-size: 19px;
+    line-height: 27px;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: 16px 16px 14px;
+  }
+
+  .hero h3 {
+    font-size: 21px;
+    line-height: 27px;
+  }
+
+  .hero-top {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .hero-meta {
+    grid-column: 1 / -1;
+  }
+
+  .counts {
+    gap: 6px;
+  }
+
+  .cc {
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px 0 5px;
+  }
+
+  .counts .aside {
+    width: 100%;
+    margin: 4px 0 0 4px;
+  }
+
+  .maprow > .mapblk {
+    width: 100%;
+  }
+
+  .plan {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cross {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-width: 300px;
+  }
+}

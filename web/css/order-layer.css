@@ -1,0 +1,645 @@
+/* The doctor's order view, part 2: our layer inside the hospital system's order form (js/views/order/layer.js,
+   layer-view.js, parts.js, previous-results.js, drug-numbers.js, sign-sheet.js), in the product's tokens. */
+.sw-layer,
+.order-sheet {
+  font-family: var(--font);
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  color: var(--ink);
+}
+
+.sw-slot {
+  display: grid;
+  gap: 6px;
+}
+
+.sw-slot:empty {
+  display: none;
+}
+
+.sw-slot[aria-busy="true"] > .sw-card,
+.sw-slot[aria-busy="true"] > .sw-chips {
+  opacity: 0.6;
+  transition: opacity var(--t-fast);
+}
+
+/* source label: the product mark and name, "· infection control" when someone flagged it */
+.sw-src {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.sw-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-xs);
+  background: var(--mark);
+  color: var(--on-ink);
+  box-shadow: var(--sh-mark);
+}
+
+.sw-when {
+  font-weight: 500;
+}
+
+.sw-when::before {
+  content: "· ";
+}
+
+/* chips: quiet, no data, notices. Calm and never focused */
+.sw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.sw-chip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  max-width: 100%;
+  min-height: 30px;
+  padding: 4px 12px 4px 5px;
+  border-radius: 15px;
+  background: var(--surface);
+  box-shadow: var(--sh-1);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.sw-chip .tile.sm {
+  border-radius: 10px;
+}
+
+.sw-chip.nodata {
+  box-shadow: none;
+  outline: 1px dashed var(--line-strong);
+  outline-offset: -1px;
+}
+
+.sw-chip-note {
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+.sw-chips > .sw-src {
+  margin-left: auto;
+}
+
+.sw-disc {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.sw-disc:hover {
+  background: var(--accent-wash);
+}
+
+.sw-disc svg {
+  transition: transform var(--t-fast) var(--ease);
+}
+
+.sw-disc[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+/* the label on the left, one result per line beside it */
+.prev-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 2px 10px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--ink-2);
+}
+
+.prev-lbl {
+  grid-row: span 4;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.prev-line > :not(.prev-lbl) {
+  grid-column: 2;
+}
+
+.prev-it {
+  color: var(--ink);
+}
+
+.sw-panel {
+  background: var(--surface);
+  border-radius: var(--r);
+  box-shadow: var(--sh-1);
+  overflow: hidden;
+}
+
+/* the passive card at select */
+.sw-card {
+  background: var(--surface);
+  border-radius: var(--r);
+  box-shadow: var(--sh-2);
+  overflow: hidden;
+  animation: sw-in var(--t-med) var(--ease);
+}
+
+@keyframes sw-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.sw-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 10px;
+  padding: 12px 14px 0;
+}
+
+.sw-head > .tile {
+  grid-row: span 3;
+  margin-top: 1px;
+}
+
+.sw-head > :not(.tile) {
+  grid-column: 2;
+}
+
+.sw-title {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+  text-wrap: pretty;
+}
+
+.sw-ask {
+  font-size: 13px;
+  line-height: 19px;
+  font-weight: 550;
+  text-wrap: pretty;
+}
+
+.sw-head .prev-line {
+  padding: 4px 0 0;
+}
+
+.sw-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 14px 10px 38px;
+}
+
+.sw-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sw-more {
+  border-top: 0.5px solid var(--line);
+}
+
+.sw-sec {
+  display: grid;
+  gap: 6px;
+  padding: 10px 14px;
+}
+
+.sw-sec + .sw-sec {
+  border-top: 0.5px solid var(--line);
+}
+
+.sw-sec .eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+
+.sw-count {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.sw-text {
+  font-size: 13px;
+  line-height: 19px;
+  text-wrap: pretty;
+}
+
+.sw-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 9px 14px 11px;
+  border-top: 0.5px solid var(--line);
+  background: var(--bg);
+}
+
+.sw-fine {
+  flex: 1;
+  min-width: 220px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ink-2);
+}
+
+.sw-fine b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* previous results */
+.prev {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.prev th {
+  padding: 0 10px 5px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.prev td {
+  padding: 5px 10px 5px 6px;
+  border-top: 0.5px solid var(--line);
+  vertical-align: middle;
+}
+
+.prev tr.hit td {
+  background: var(--p2-fill);
+}
+
+.prev tr.hit td:first-child {
+  box-shadow: inset 2px 0 0 var(--p2);
+}
+
+.prev-res {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.prev-why {
+  color: var(--ink-2);
+}
+
+.srb.none {
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+}
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  background: var(--fill);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+/* this drug in this population */
+.nums-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: baseline;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.nums-pop {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
+}
+
+/* the section is the container, so the query below can change the grid's own columns */
+.nums-sec {
+  container: nums / inline-size;
+}
+
+.nums {
+  display: grid;
+  grid-template-columns: auto auto auto minmax(80px, 1fr);
+  column-gap: 14px;
+}
+
+/* the rows share the columns of .nums (subgrid), so counts, shares and bars line up across windows */
+.nums-row,
+.nums-axis {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+}
+
+.nums-row {
+  min-height: 36px;
+  padding: 5px 0;
+  border-top: 0.5px solid var(--line);
+  font-size: 13px;
+  line-height: 17px;
+}
+
+.nums-axis {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.nums-axis > span {
+  grid-column: 4;
+  grid-row: 1;
+}
+
+.nums-axis > span:nth-child(2) {
+  justify-self: center;
+}
+
+.nums-axis > span:last-child {
+  justify-self: end;
+}
+
+.nums-count {
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.nums-share {
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.nums-few {
+  display: block;
+}
+
+.nums-bar .ibar {
+  height: 14px;
+  margin: 0;
+}
+
+.nums-bar .ibar .track,
+.nums-bar .ibar .band {
+  top: 5px;
+  height: 4px;
+}
+
+.nums-bar .ibar .val {
+  top: 2px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+}
+
+.nums-bar .ibar-axis {
+  display: none;
+}
+
+@container nums (max-width: 440px) {
+  .nums {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .nums-row {
+    row-gap: 2px;
+  }
+
+  .nums-share {
+    grid-column: 2;
+    justify-self: end;
+    text-align: right;
+  }
+
+  .nums-bar {
+    grid-column: 1 / -1;
+  }
+
+  .nums-axis {
+    display: none;
+  }
+}
+
+/* ================================================================ the check at signing (a warning only) */
+.sheet.order-sheet {
+  width: 680px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.order-sheet .sheet-head {
+  padding: 16px 18px 6px;
+}
+
+.order-sheet .sheet-head .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--p2);
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.order-sheet .sheet-head h2 {
+  margin-top: 8px;
+  font-size: 20px;
+  line-height: 26px;
+  text-wrap: balance;
+}
+
+.order-sheet .sheet-body {
+  gap: 0;
+  margin-top: 0;
+}
+
+.order-sheet .sheet-body > .sw-meta {
+  padding: 0 18px 12px;
+  border-bottom: 0.5px solid var(--line);
+}
+
+.order-sheet .sw-sec {
+  padding: 12px 18px;
+}
+
+.order-sheet .sheet-body > .sw-ask {
+  padding: 12px 18px 4px;
+  border-top: 0.5px solid var(--line);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.order-sheet .sheet-body > .sw-fine {
+  padding: 6px 18px 14px;
+}
+
+.order-sheet .sheet-foot {
+  position: sticky;
+  bottom: 0;
+  margin-top: 0;
+  padding: 12px 18px 14px;
+  border-top: 0.5px solid var(--line);
+  background: var(--surface);
+}
+
+.order-sheet .sheet-foot .note {
+  max-width: none;
+}
+
+.keep {
+  display: grid;
+  gap: 8px;
+  margin: 8px 18px 4px;
+  padding: 12px;
+  border: 0;
+  border-radius: var(--r);
+  background: var(--bg);
+}
+
+.keep-q {
+  float: left;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+}
+
+.keep-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.keep-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 12px 0 9px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--sh-control);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.keep-opt:has(input:checked) {
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+.keep-opt input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.keep-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.keep-msg {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--p2);
+}
+
+@media (max-width: 1023px) {
+  .sheet.order-sheet {
+    width: auto;
+    max-height: calc(100vh - 24px);
+    padding: 8px 0 env(safe-area-inset-bottom);
+  }
+
+  .order-sheet .sheet-head,
+  .order-sheet .sw-sec,
+  .order-sheet .sheet-foot {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .order-sheet .sheet-foot .btns {
+    width: 100%;
+  }
+
+  .order-sheet .sheet-foot .btn {
+    flex: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .prev .hide-s {
+    display: none;
+  }
+
+  .sw-acts {
+    padding-left: 14px;
+  }
+
+  /* the label above its results, not beside them */
+  .prev-line {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prev-line > :not(.prev-lbl),
+  .prev-lbl {
+    grid-row: auto;
+    grid-column: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sw-card {
+    animation: none;
+  }
+}

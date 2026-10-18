@@ -1,0 +1,11 @@
+{
+  "name": "aei-web",
+  "private": true,
+  "description": "The web UI: plain HTML, CSS and ES modules served as static files. No build step and no runtime dependencies.",
+  "type": "module",
+  "scripts": {
+    "lint": "npx --yes eslint@9 --config eslint.config.js .",
+    "format": "npx --yes prettier@3 --config .prettierrc --write .",
+    "check": "npx --yes prettier@3 --config .prettierrc --check . && npx --yes eslint@9 --config eslint.config.js ."
+  }
+}

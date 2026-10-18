@@ -1,0 +1,171 @@
+/* Base: the self-hosted font, reset, text styles and utilities. Colours and sizes come from tokens.css. */
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/Inter-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-padding-top: 120px;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 15px/22px var(--font);
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-optical-sizing: auto;
+  font-feature-settings: "calt" 1;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: inherit;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+svg {
+  display: block;
+  flex: none;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure {
+  margin: 0;
+}
+
+/* Focus: a 2px accent ring on every control; headings and main, focused by script with tabindex=-1, get none. */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+:is(h1, h2, h3, main)[tabindex="-1"]:focus {
+  outline: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.skip {
+  position: fixed;
+  left: 12px;
+  top: -60px;
+  z-index: 100;
+  background: var(--ink);
+  color: var(--on-ink);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-weight: 600;
+  transition: top var(--t-fast);
+}
+
+.skip:focus {
+  top: 12px;
+  color: var(--on-ink);
+}
+
+/* Text styles: the Apple scale. Nothing below 11px anywhere, SVG text included. */
+.t-large {
+  font-size: 34px;
+  line-height: 41px;
+  font-weight: 700;
+  letter-spacing: -0.024em;
+}
+
+.t-title2 {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 650;
+  letter-spacing: -0.018em;
+}
+
+.t-headline {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+}
+
+.t-subhead {
+  font-size: 13px;
+  line-height: 18px;
+  letter-spacing: -0.004em;
+}
+
+.t-footnote {
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0;
+}
+
+.eyebrow {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* Utilities */
+.sr {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.ink2 {
+  color: var(--ink-2);
+}
+
+.nobr {
+  white-space: nowrap;
+}

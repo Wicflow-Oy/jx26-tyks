@@ -1,0 +1,115 @@
+/* Design tokens (DESIGN.md §1). The only place colour, type, space, radius, shadow and motion are defined.
+   A dark theme later overrides these names; it never adds new ones. */
+:root {
+  /* neutrals */
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-hover: #f2f2f5;
+  --surface-veil: rgba(255, 255, 255, 0.9);
+  --glass: rgba(250, 250, 252, 0.74);
+  --glass-bar: rgba(250, 250, 252, 0.82);
+  --glass-solid: #f8f8fa;
+  --fill: #eeeef1;
+  --fill-2: #e4e4e9;
+  --seg-track: rgba(118, 118, 128, 0.12);
+  --scrim: rgba(0, 0, 0, 0.2);
+  --hover: rgba(0, 0, 0, 0.045);
+  --pressed: rgba(0, 0, 0, 0.07);
+  --band: rgba(0, 0, 0, 0.14);
+  --grabber: rgba(0, 0, 0, 0.18);
+  --shimmer: #f6f6f8;
+  --toast: rgba(29, 29, 31, 0.95);
+  --wash-accent: rgba(0, 102, 204, 0.09);
+  --wash-shade: rgba(0, 0, 0, 0.035);
+
+  /* lines */
+  --line: rgba(0, 0, 0, 0.09);
+  --line-2: rgba(0, 0, 0, 0.05);
+  --line-control: rgba(0, 0, 0, 0.14);
+  --line-strong: #8a8a8f;
+
+  /* ink */
+  --ink: #1d1d1f;
+  --ink-2: #5f5f64;
+  --ink-3: #8a8a8f;
+  --on-ink: #ffffff;
+  --future: rgba(0, 0, 0, 0.13);
+
+  /* the app mark: a dark tile with one light satellite */
+  --mark: linear-gradient(180deg, #3a3a3c, #1d1d1f);
+  --mark-edge: #2c2c2e;
+  --mark-dot: #5aa9ff;
+
+  /* one interactive accent: primary button, links, focus ring */
+  --accent: #0066cc;
+  --accent-hover: #0058b0;
+  --accent-wash: rgba(0, 102, 204, 0.07);
+
+  /* semantic: always paired with a glyph and a word */
+  --p1: #b42318;
+  --p1-fill: #fdecea;
+  --p1-wash: #fff7f6;
+  --p2: #8a4b00;
+  --p2-fill: #fff1d6;
+  --ok: #1b7a35;
+  --ok-fill: #e6f4ea;
+  --marker: rgba(255, 206, 0, 0.42);
+  --hatch: repeating-linear-gradient(135deg, rgba(0, 0, 0, 0.13) 0 1px, transparent 1px 5px);
+
+  /* type: one family; the text styles (.t-large … .eyebrow) live in base.css */
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* space (4-pt grid) */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s7: 32px;
+  --s8: 40px;
+  --s9: 56px;
+
+  /* radius */
+  --r-xs: 5px;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --r-xl: 18px;
+
+  /* shadow */
+  --hair: 0 0 0 0.5px rgba(0, 0, 0, 0.1);
+  --sh-1: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --sh-2: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(0, 0, 0, 0.07);
+  --sh-3: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 24px 70px rgba(0, 0, 0, 0.2);
+  --sh-control: 0 0 0 0.5px rgba(0, 0, 0, 0.14), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --sh-selected: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --sh-primary: 0 1px 1px rgba(0, 0, 0, 0.08);
+  --sh-sidebar: 0 0 0 0.5px rgba(0, 0, 0, 0.09), 0 1px 1px rgba(0, 0, 0, 0.03), 0 10px 30px rgba(0, 0, 0, 0.05);
+  --sh-tabbar: 0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 8px 28px rgba(0, 0, 0, 0.12);
+  --sh-toast: 0 10px 30px rgba(0, 0, 0, 0.2);
+  --sh-mark: inset 0 0.5px 0 rgba(255, 255, 255, 0.18), 0 1px 2px rgba(0, 0, 0, 0.18);
+
+  /* motion */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --t-fast: 160ms;
+  --t-med: 240ms;
+  --t-slow: 320ms;
+
+  /* layout */
+  --edge: 8px;
+  --sb: 248px;
+  --pane: 420px;
+  --tb: 52px;
+  --rail: 46px;
+  --col: 700px;
+  --tabbar: 58px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t-med: 0ms;
+    --t-slow: 0ms;
+  }
+}

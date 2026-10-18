@@ -1,0 +1,99 @@
+/* Guided tour (js/views/tour.js): the dark popover and the accent ring around the step's target. tour.js sets
+   their left and top every frame, so neither animates position; both fade in. */
+
+.tour {
+  position: fixed;
+  z-index: 70;
+  top: 0;
+  left: 0;
+  width: 330px;
+  max-width: calc(100vw - 24px);
+  padding: 14px 16px 12px;
+  border-radius: 14px;
+  background: var(--ink);
+  color: var(--on-ink);
+  box-shadow: var(--sh-3);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px);
+  transition:
+    opacity var(--t-med) var(--ease),
+    transform var(--t-med) var(--ease),
+    visibility 0s var(--t-med);
+}
+
+.tour.on {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition:
+    opacity var(--t-med) var(--ease),
+    transform var(--t-med) var(--ease);
+}
+
+.tour-count {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--on-ink) 72%, transparent);
+}
+
+.tour-text {
+  margin: 6px 0 12px;
+  font-size: 14px;
+  line-height: 20px;
+  text-wrap: pretty;
+}
+
+.tour-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tour-btns .grow {
+  flex: 1;
+}
+
+.tour-btn {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--on-ink) 85%, transparent);
+  transition: background-color var(--t-fast);
+}
+
+.tour-btn:hover {
+  background: color-mix(in srgb, var(--on-ink) 12%, transparent);
+}
+
+.tour-btn.primary {
+  background: var(--on-ink);
+  color: var(--ink);
+}
+
+/* the accent ring does not reach 3:1 on the dark card, so the card's buttons use a light ring */
+.tour-btn:focus-visible {
+  outline: 2px solid var(--on-ink);
+  outline-offset: 2px;
+}
+
+.tour-ring {
+  position: fixed;
+  z-index: 69;
+  top: 0;
+  left: 0;
+  border-radius: var(--r);
+  box-shadow: 0 0 0 2px var(--accent);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--t-med) var(--ease);
+}
+
+.tour-ring.on {
+  opacity: 1;
+}
