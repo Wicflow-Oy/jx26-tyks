@@ -11,8 +11,6 @@ import { asOfRange, getState, setAsOf, subscribe } from "../state.js";
 const PLAY_STEP_MS = 1100;
 const REFRESH_MS = 20_000;
 const REFRESH_LIMIT = 6;
-// used only when /api/meta has no tour_start_as_of (an older backend); ignored unless it is a replay week
-const TOUR_START_FALLBACK = "2026-03-01";
 
 let weeks = []; // [{ as_of, monday, n_p1, n_signals }], oldest first
 let tourStart = "";
@@ -23,8 +21,7 @@ const listeners = new Set();
 /** Starts from the meta week grid (so the rail works at once) and loads the tick counts. */
 export function initTimeline(meta) {
   const grid = weekGrid(meta.replay.first, meta.replay.last);
-  const start = meta.tour_start_as_of ?? TOUR_START_FALLBACK;
-  tourStart = grid.includes(start) ? start : "";
+  tourStart = grid.includes(meta.tour_start_as_of) ? meta.tour_start_as_of : "";
   weeks = grid.map((asOf) => ({ as_of: asOf }));
   subscribe((state, prev) => {
     if (isPlaying() && state.asOf !== prev.asOf && state.asOf !== playAsOf) stopPlay();

@@ -155,6 +155,24 @@ def test_order_view_info_and_warning_at_sign(open_page):
     sheet.wait_for(state="hidden")
 
 
+def test_order_view_notice_is_one_chip(open_page):
+    """An approved alert on the unit that does not apply to the drug: one chip, no card and no numbers; signing goes
+    straight through."""
+    page = open_page("#order?patient=icu-mrsa")
+    page.locator(".sw-card").wait_for()  # the scenario's cefuroxime: the ICU MRSA alert applies to it
+    page.fill("#ord-med", "Vancomycin")
+    page.keyboard.press("Enter")
+    page.locator(".sw-chip", has_text="does not apply to vancomycin").wait_for()
+    assert page.locator(".sw-card, #sw-more").count() == 0
+    page.fill("#ord-dose", "1")
+    page.select_option("#ord-route", index=1)
+    page.select_option("#ord-freq", index=1)
+    page.locator(".ehr-btn.sign").click()
+    page.locator(".olist li", has_text="Vancomycin").wait_for()
+    assert page.locator("#sheet.open").count() == 0
+    no_change_to(page)
+
+
 def test_language_switch(open_page):
     page = open_page(f"#brief?as_of={AS_OF}")
     page.locator("#brief-hero").wait_for()

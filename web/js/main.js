@@ -35,7 +35,6 @@ import * as ward from "./views/ward.js";
 const PAGES = { brief, ward, order };
 const PANES = { case: caseFile, trend };
 
-let meta = null; // GET /api/meta
 let pageRun = null;
 let paneRun = null;
 let lastFocused = null; // see restoreFocus()
@@ -46,8 +45,9 @@ boot();
 async function boot() {
   const root = $("#view");
   mount(root, loadingState(t("shell.loading")));
+  let meta;
   try {
-    meta = await get("/api/meta", {}, { asOf: false, lang: false });
+    meta = await get("/api/meta", {}, { asOf: false });
     if (!isISODate(meta?.replay?.first) || !isISODate(meta?.replay?.last)) throw new ApiError("server");
   } catch (error) {
     mount(root, errorState({ title: t("shell.error.boot"), error, onRetry: boot }));
@@ -129,10 +129,16 @@ async function renderPane(state, prev) {
   markSelection(getState());
 }
 
-/** Runs a view; a failure the view did not handle becomes a generic error card. Aborts are silent. */
+/**
+ * Runs a view with /api/meta and /api/filters in the current language (both cached per language); a failure the view
+ * did not handle becomes a generic error card. Aborts are silent.
+ */
 async function runView(view, root, ctx) {
   try {
-    const filters = await get("/api/filters", {}, { asOf: false, signal: ctx.signal });
+    const [meta, filters] = await Promise.all([
+      get("/api/meta", {}, { asOf: false, signal: ctx.signal }),
+      get("/api/filters", {}, { asOf: false, signal: ctx.signal }),
+    ]);
     await view.render(root, { meta, filters, ...ctx });
   } catch (error) {
     if (isAbort(error) || ctx.signal.aborted) return;

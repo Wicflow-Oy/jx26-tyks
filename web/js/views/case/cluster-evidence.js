@@ -14,9 +14,11 @@ import { MIN_N_FOR_SHARE, methodText, notes } from "./parts.js";
 export function clusterEvidence({ item, file, asOf, names, lagDays }) {
   const slots = item.slots ?? {};
   const counts = item.evidence?.counts ?? {};
-  const pattern = slots.pattern ?? item.evidence?.filter?.profile ?? null;
   const rows = file.line_list.rows.filter((row) => row.date <= asOf);
-  const shared = pattern ? rows.filter((row) => row.profile === pattern).length : rows.length;
+  // a heterogeneous card's filter still names its most common antibiogram; it is "shared" only when two patients have it
+  const top = slots.pattern ?? item.evidence?.filter?.profile ?? null;
+  const shared = top ? rows.filter((row) => row.profile === top).length : rows.length;
+  const pattern = shared >= 2 ? top : null;
   const onset = item.evidence?.competing_explanations?.values?.hospital_onset_share;
   const isPhenotype = item.kind === "phenotype_cluster" && counts.first_alert_date;
 

@@ -6,7 +6,7 @@ import { icon } from "../../components/icons.js";
 import { emptyState } from "../../components/states.js";
 import { h } from "../../dom.js";
 import { t } from "../../i18n.js";
-import { titleParts } from "../../signals.js";
+import { signalTitle } from "../../signals.js";
 import { openPane } from "../../state.js";
 
 /**
@@ -14,12 +14,10 @@ import { openPane } from "../../state.js";
  * text in full. The completeness line that says every unit sent data gets the OK tile.
  */
 export function signalRow(item, { extra = null } = {}) {
-  const title = titleParts(item);
+  const title = signalTitle(item);
   const glyph = item.kind === "completeness" && item.priority === "info" ? "ok" : item.priority;
   const textId = `row-text-${item.id}`;
-  const label = [priorityLabel(glyph), title.join(", "), t(`shell.status.${item.status}`), item.advice]
-    .filter(Boolean)
-    .join(", ");
+  const label = [priorityLabel(glyph), title, t(`shell.status.${item.status}`), item.advice].filter(Boolean).join(", ");
   return h(
     "li",
     null,
@@ -37,7 +35,7 @@ export function signalRow(item, { extra = null } = {}) {
       h(
         "span",
         { class: "row-main" },
-        h("span", { class: "row-title t-headline" }, titleNodes(title)),
+        h("span", { class: "row-title t-headline" }, title),
         h("span", { class: ["row-text t-subhead", extra && "full"], id: textId }, item.text),
         extra,
       ),

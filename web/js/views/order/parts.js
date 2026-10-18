@@ -1,6 +1,6 @@
 // Small pieces of our layer shared by the chips, the card and the signing sheet. They read the order context from
-// POST /api/order-context (CONTRACTS §7b) and render its text as it is: the backend owns every rule and word.
-// The context's local-guide alternatives and "change to" codes are never read: the layer does not name another drug.
+// POST /api/order-context (CONTRACTS §7b) and render its text as it is: the backend owns every rule, word and label,
+// and it never names another drug.
 
 import { icon } from "../../components/icons.js";
 import { h } from "../../dom.js";
@@ -12,12 +12,6 @@ export const line = (ctx, key) => (Array.isArray(ctx?.lines) ? ctx.lines.find((l
 
 /** The ordered drug's name as the backend writes it ("Ceftriaxone"), or its code. */
 export const drugName = (ctx) => ctx?.drug_name ?? ctx?.drug ?? "";
-
-/** The card's title: the clinical reason when the backend gives one, else its short summary. */
-export const headline = (ctx) => ctx.headline ?? ctx.summary ?? ctx.chip ?? "";
-
-/** The neutral sentence for an info or a warning; the fallback is the same sentence until `ask` arrives. */
-export const ask = (ctx) => (ctx.ask === undefined ? t("order.layer.ask") : ctx.ask);
 
 /** Who flagged it (from the "happening" source) and when; for the patient's own result, the date is a sample date. */
 export function flaggedBy(ctx) {
@@ -38,19 +32,13 @@ export function sourceLabel(appName, ctx) {
   );
 }
 
-/** The link to My ward for this unit, specimen and organism, so the doctor can look at every drug. */
+/** The API's "All drugs on My ward" link for this unit, specimen and organism, so the doctor can look at every drug. */
 export function detailsLink(ctx, { onFollow } = {}) {
   const details = ctx.actions?.details;
-  const link = details?.link ?? ctx.actions?.details_link;
-  if (!link) return null;
+  if (!details?.link) return null;
   // the API gives "/#/ward?…"; keeping only the hash part stays inside this app wherever it is served
-  const href = link.slice(Math.max(0, link.indexOf("#")));
-  return h(
-    "a",
-    { class: "sw-link", href, onclick: onFollow },
-    details?.label ?? t("order.layer.details"),
-    icon("chevron", 6),
-  );
+  const href = details.link.slice(Math.max(0, details.link.indexOf("#")));
+  return h("a", { class: "sw-link", href, onclick: onFollow }, details.label, icon("chevron", 6));
 }
 
 /** "Observed unit-level information, not a prediction for this patient. The doctor decides." plus the lag note. */

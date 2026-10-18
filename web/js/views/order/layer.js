@@ -7,7 +7,6 @@ import { tile } from "../../components/badges.js";
 import { h, mount } from "../../dom.js";
 import { t } from "../../i18n.js";
 import { layerView } from "./layer-view.js";
-import { headline } from "./parts.js";
 import { logFeedback, orderContext } from "./requests.js";
 
 const FLAGS = new Set(["info", "warning"]);
@@ -47,7 +46,7 @@ export function orderLayer({ appName, filters }) {
     const onDetails = () => FLAGS.has(ctx.state) && logFeedback(draft, ctx, "details");
     mount(slot, layerView(ctx, { appName, filters, draft, onDetails }));
     drawn = true;
-    live.textContent = `${appName}: ${FLAGS.has(ctx.state) ? headline(ctx) : ctx.chip}`;
+    live.textContent = `${appName}: ${FLAGS.has(ctx.state) ? ctx.headline : ctx.chip}`;
     if (FLAGS.has(ctx.state)) logFeedback(draft, ctx, "shown");
   }
 
@@ -56,4 +55,8 @@ export function orderLayer({ appName, filters }) {
 }
 
 const statusChip = (kind, text) =>
-  h("div", { class: "sw-chips" }, h("p", { class: "sw-chip" }, tile(kind, "sm"), h("span", null, text)));
+  h(
+    "div",
+    { class: "sw-chips" },
+    h("p", { class: "sw-chip" }, tile(kind, "sm"), h("span", { class: "sw-chip-text" }, text)),
+  );

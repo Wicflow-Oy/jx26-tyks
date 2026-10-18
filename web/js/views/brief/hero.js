@@ -9,7 +9,7 @@ import { mk } from "../../components/marker.js";
 import { h } from "../../dom.js";
 import { dateShort, int, xOfN } from "../../format.js";
 import { t } from "../../i18n.js";
-import { heroTitle, kindLabel } from "../../signals.js";
+import { kindLabel, signalTitle } from "../../signals.js";
 import { openPane } from "../../state.js";
 import { rich } from "../../text.js";
 
@@ -34,7 +34,7 @@ export function hero({ item, file, alerts, asOf, drugLabel, lagDays }) {
       h("span", { class: "hero-kicker" }, h("b", null, priorityLabel(item.priority)), ` · ${kindLabel(item.kind)}`),
       h("span", { class: "hero-meta" }, stateWord(item.status), adviceChip(item.advice)),
     ),
-    h("h3", { id: titleId }, heroTitle(item)),
+    h("h3", { id: titleId }, signalTitle(item)),
     h("p", { class: "lede" }, item.text),
     chips(item.slots ?? {}, drugLabel),
     epi(item, file, asOf, lagDays),

@@ -1,6 +1,6 @@
-// Policy lines: every line from brief.policy_states, never an empty section. A crossed line is its P2 signal row with
-// the meter under the text; a line below its threshold is a quiet "Line" row with the same meter. Without
-// policy_states (an older backend) the section lists the policy signals the brief has.
+// Policy lines: every line from brief.policy_states, never an empty section. A line with a signal this week (crossed,
+// or resolved) is its signal row with the meter under the text; any other line is a quiet "Line" row with the same
+// meter.
 
 import { tile } from "../../components/badges.js";
 import { intervalBar } from "../../components/interval-bar.js";
@@ -13,17 +13,10 @@ import { sectionItems } from "./model.js";
 import { rowList, signalRow, titleNodes } from "./row.js";
 
 export function policyList(brief) {
-  const items = sectionItems(brief, "policy");
-  const states = Array.isArray(brief.policy_states) ? brief.policy_states : [];
-  const signals = new Map(items.map((item) => [item.id, item]));
-  const stated = new Set(states.map((line) => line.signal_id));
-  const rows = [
-    ...states.map((line) =>
-      signals.has(line.signal_id) ? signalRow(signals.get(line.signal_id), { extra: meter(line) }) : lineRow(line),
-    ),
-    // a policy signal without a state (all of them on a backend without policy_states) carries its own slots
-    ...items.filter((item) => !stated.has(item.id)).map((item) => signalRow(item, { extra: meter(item.slots) })),
-  ];
+  const signals = new Map(sectionItems(brief, "policy").map((item) => [item.id, item]));
+  const rows = brief.policy_states.map((line) =>
+    signals.has(line.signal_id) ? signalRow(signals.get(line.signal_id), { extra: meter(line) }) : lineRow(line),
+  );
   return rowList(rows, t("brief.empty.policy"), "line");
 }
 
@@ -77,9 +70,8 @@ const lineSummary = (line, weeks) =>
     }),
   ].join(": ");
 
-/** The 0–40% meter: interval band, value dot (amber at or over the line), labelled line. A state or a signal's slots. */
+/** The 0–40% meter of a policy state: interval band, value dot (amber at or over the line), labelled line. */
 const meter = (line) =>
-  line?.rate != null &&
   intervalBar({
     value: line.rate,
     interval: line.interval,

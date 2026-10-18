@@ -83,6 +83,12 @@
   border-radius: 10px;
 }
 
+/* a long chip wraps its words beside the tile; only the quiet note may drop to its own line */
+.sw-chip-text {
+  flex: 1 1 12em;
+  min-width: 0;
+}
+
 .sw-chip.nodata {
   box-shadow: none;
   outline: 1px dashed var(--line-strong);

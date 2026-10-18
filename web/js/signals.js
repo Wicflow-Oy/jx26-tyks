@@ -2,6 +2,7 @@
 // and My ward, so they all agree (one cached GET /api/brief per as-of week).
 
 import { get } from "./api.js";
+import { capitalize } from "./format.js";
 import { t } from "./i18n.js";
 
 export const PRIORITIES = ["P1", "P2", "P3", "info"];
@@ -40,44 +41,14 @@ export function topPriority(brief, ids = []) {
   return byPriority(items)[0]?.priority ?? null;
 }
 
-/**
- * A signal's title as parts, joined with " · " on screen: ["ICU", "S. aureus", "Cefoxitin"]. The API's plain
- * title (slots.title) wins; until every signal has one, the title is built from the kind and the signal's slots
- * (ward, marker, organism, drug, population), never from its text. The one title rule for every screen.
- */
-export function titleParts(item) {
-  const slots = item?.slots ?? {};
-  if (slots.title) return [slots.title];
-  const organism = slots.organism_label ?? item?.organism;
-  const drug = slots.drug_label ?? item?.drug;
-  const kind = kindLabel(item?.kind);
-  const parts = {
-    phenotype_cluster: () => [item.ward, t("shell.title.cluster", { organism })],
-    seen_before: () => [item.ward, t("shell.title.pattern", { organism })],
-    thl_rule: () => (slots.marker_label ? [item.ward, slots.marker_label, organism] : [item.ward, organism, kind]),
-    policy_line: () => [drug, slots.population_label],
-    expert_rule: () => [kind, slots.units_text],
-    completeness: () => (item.ward ? [item.ward, t("shell.priority.gap")] : [kind]),
-    ward_outlier: () => [item.ward, kind],
-    resistance_change: () => [item.ward, organism, drug],
-  }[item?.kind];
-  return (parts ? parts() : [item?.ward, organism, drug, kind]).filter(Boolean);
-}
+/** A signal's title as the API writes it, in the UI language: "ICU: possible cluster of MRSA". Every screen. */
+export const signalTitle = (item) => item?.title ?? "";
 
-/** The title as one line: "ICU · S. aureus · Cefoxitin". */
-export const signalTitle = (item) => titleParts(item).join(" · ");
-
-/** The title without the unit, where the context already names it ("On ICU this week"). */
-export const titleOffUnit = (item) => {
-  const parts = titleParts(item);
-  return (parts[0] === item?.ward && parts.length > 1 ? parts.slice(1) : parts).join(" · ");
-};
-
-/** The P1 hero's headline: "ICU: possible cluster of MRSA" for a cluster, else the title. */
-export function heroTitle(item) {
-  const slots = item?.slots ?? {};
-  if (slots.title || item?.kind !== "phenotype_cluster" || !item.ward) return signalTitle(item);
-  return t("shell.title.clusterHero", { ward: item.ward, organism: slots.organism_label ?? item.organism });
+/** The title without its unit, where the context already names it ("On ICU this week"): "Possible cluster of MRSA". */
+export function titleOffUnit(item) {
+  const title = signalTitle(item);
+  const prefix = `${item?.ward}: `;
+  return title.startsWith(prefix) ? capitalize(title.slice(prefix.length)) : title;
 }
 
 const KINDS = [

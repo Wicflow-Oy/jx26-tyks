@@ -51,7 +51,7 @@ export function previousTable(ctx, filters, heading = "h4") {
             h("td", { class: "hide-s" }, row.unit),
             h("td", { class: "hide-s" }, specimenWord(row.specimen, filters)),
             h("td", null, organismName(row.organism, filters), flags(row)),
-            h("td", null, result(row, drugName(ctx))),
+            h("td", null, result(row, ctx)),
           ),
         ),
       ),
@@ -75,20 +75,26 @@ export function previousLine(ctx, filters) {
         `${dateFull(row.date)} · ${organismName(row.organism, filters)}`,
         flags(row),
         ` · ${specimenWord(row.specimen, filters)} · ${drugName(ctx).toLocaleLowerCase()} `,
-        result(row, drugName(ctx)),
+        result(row, ctx),
       ),
     ),
     rows.length > shown.length && h("span", null, t("order.prev.more", { n: rows.length - shown.length })),
   );
 }
 
-/** The S/R letter, or a dash with the reason there is none ("not tested"); "reported" goes without saying. */
-function result(row, drugName) {
+/**
+ * The S/R letter, or a dash with the reason there is none ("not tested"), then the API's reason_text when the result
+ * is not simply as reported: a species rule ("intrinsic resistance (EUCAST); the laboratory reported S" when it
+ * overrules the laboratory's reported_result), an inference, or flucloxacillin read from the cefoxitin screen.
+ */
+function result(row, ctx) {
+  const name = drugName(ctx);
   const badge =
     row.drug_result === "S" || row.drug_result === "R"
-      ? srBadge(row.drug_result, drugName)
+      ? srBadge(row.drug_result, name)
       : h("span", { class: "srb none", role: "img", "aria-label": t("order.prev.none") }, "–");
-  const why = row.reason && row.reason !== "reported" ? row.reason_text : "";
+  const plain = row.reason === "reported" && ctx.drug !== "FOX";
+  const why = plain ? "" : row.reason_text;
   return h("span", { class: "prev-res" }, badge, why && h("span", { class: "prev-why" }, why));
 }
 

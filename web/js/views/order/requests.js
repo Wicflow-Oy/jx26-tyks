@@ -1,9 +1,7 @@
 // The order view's API calls (CONTRACTS §7b): the order context at select and at sign, the drug picker, the
-// patient's history, and the doctor's answers (POST /api/order-feedback). Optional fields are read defensively,
-// because the backend is still adding some of them.
+// patient's history, and the doctor's answers (POST /api/order-feedback).
 
 import { get, isAbort, post } from "../../api.js";
-import { t } from "../../i18n.js";
 
 /**
  * POST /api/order-context for the draft: { scenario, asOf, indication, drug, stage: "select" | "sign", signal }.
@@ -14,17 +12,9 @@ export function orderContext({ scenario, asOf, indication, drug, stage, signal }
   return post("/api/order-context", body, { signal, keepCache: true });
 }
 
-/** The drug picker for an indication: [{ drug, name, atc }], the order drugs with a result on its specimen. */
-export async function orderDrugs(indication, { signal } = {}) {
-  const list = await get("/api/order-drugs", { indication }, { asOf: false, signal });
-  return Array.isArray(list) ? list.filter((d) => d?.drug && d?.name) : [];
-}
-
-/** [{ key, label }]: GET /api/meta indications, or the labelled fallback until the backend lists them. */
-export function indications(meta) {
-  const listed = Array.isArray(meta?.indications) ? meta.indications.filter((i) => i?.key && i?.label) : [];
-  return listed.length ? listed : t("order.form.indicationFallback");
-}
+/** GET /api/order-drugs?indication=: [{ drug, name, atc, aware }], the order drugs with a result on its specimen. */
+export const orderDrugs = (indication, { signal } = {}) =>
+  get("/api/order-drugs", { indication }, { asOf: false, signal });
 
 /** GET /api/patients/{id}/history for the banner's risk info; null when it does not load (the banner says so). */
 export async function patientHistory(patientId, { signal }) {

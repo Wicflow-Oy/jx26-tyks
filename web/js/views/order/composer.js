@@ -11,7 +11,7 @@ import { choices, field, input, select } from "./form-fields.js";
 import { orderLayer } from "./layer.js";
 import { medSearch } from "./med-search.js";
 import { drugName } from "./parts.js";
-import { indications, logFeedback, orderContext, orderDrugs } from "./requests.js";
+import { logFeedback, orderContext, orderDrugs } from "./requests.js";
 import { openSignSheet } from "./sign-sheet.js";
 
 /**
@@ -23,7 +23,7 @@ export function composer({ scenario, asOf, meta, filters, appName, draft, drugs,
   const layer = orderLayer({ appName, filters });
   const refresh = () => layer.update({ scenario, asOf, draft });
 
-  const indicationOptions = indications(meta).map((i) => ({ value: i.key, label: i.label }));
+  const indicationOptions = meta.indications.map((i) => ({ value: i.key, label: i.label }));
   const indication = select(
     "ord-ind",
     [{ value: "", label: t("order.form.indicationPick") }, ...indicationOptions],

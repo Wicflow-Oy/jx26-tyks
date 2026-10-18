@@ -9,16 +9,7 @@ import { openSheet } from "../../components/sheet.js";
 import { $, h } from "../../dom.js";
 import { t } from "../../i18n.js";
 import { drugNumbers } from "./drug-numbers.js";
-import {
-  ask,
-  detailsLink,
-  drugName,
-  happeningSection,
-  headline,
-  notesSection,
-  smallPrint,
-  sourceLabel,
-} from "./parts.js";
+import { detailsLink, drugName, happeningSection, notesSection, smallPrint, sourceLabel } from "./parts.js";
 import { previousTable } from "./previous-results.js";
 import { logFeedback } from "./requests.js";
 
@@ -35,20 +26,18 @@ export function openSignSheet(ctx, { appName, filters, draft, onKeep, onEdit, on
     fn();
   };
 
-  const drug = drugName(ctx).toLocaleLowerCase();
-  const keepLabel = ctx.actions?.keep?.label ?? t("order.sign.keep", { drug });
-  const reasons = ctx.actions?.keep?.reasons ?? ctx.actions?.keep_reasons ?? [];
+  const { keep: keepAction, edit: editAction } = ctx.actions;
   const keep = keepBox({
-    label: keepLabel,
-    drug,
-    reasons,
+    label: keepAction.label,
+    drug: drugName(ctx).toLocaleLowerCase(),
+    reasons: keepAction.reasons,
     onConfirm: (reason) => {
       logFeedback(draft, ctx, "keep", { reason });
       answer(() => onKeep(reason));
     },
   });
   const keepToggle = button({
-    label: t("order.sign.keepMore", { label: keepLabel }),
+    label: t("order.sign.keepMore", { label: keepAction.label }),
     large: true,
     attrs: { "aria-controls": keep.el.id },
     // the reasons and "Keep … and sign" take its place, scrolled into view above the sheet's sticky footer
@@ -62,7 +51,7 @@ export function openSignSheet(ctx, { appName, filters, draft, onKeep, onEdit, on
     },
   });
   const edit = button({
-    label: ctx.actions?.edit?.label ?? t("order.sign.edit"),
+    label: editAction.label,
     large: true,
     onClick: () => {
       logFeedback(draft, ctx, "edit");
@@ -79,14 +68,14 @@ export function openSignSheet(ctx, { appName, filters, draft, onKeep, onEdit, on
 
   const sheet = openSheet({
     eyebrow: [tile("P2", "xs"), h("span", null, t("order.sign.kicker"))],
-    title: headline(ctx),
+    title: ctx.headline,
     body: [
       h("p", { class: "sw-meta" }, sourceLabel(appName, ctx)),
       previousTable(ctx, filters, "h3"),
       happeningSection(ctx, "h3"),
       drugNumbers(ctx, filters, "h3"),
       notesSection(ctx, "h3"),
-      h("p", { class: "sw-ask" }, ask(ctx)),
+      h("p", { class: "sw-ask" }, ctx.ask),
       keep.el,
       smallPrint(ctx),
     ],

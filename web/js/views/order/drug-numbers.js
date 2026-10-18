@@ -53,7 +53,6 @@ function windowRow(label, r, n, share, ci, state, word) {
       h("span", { class: "nums-bar" }),
     );
   }
-  const value = share ?? (n ? r / n : null);
   return h(
     "div",
     { class: "nums-row" },
@@ -62,10 +61,10 @@ function windowRow(label, r, n, share, ci, state, word) {
     h(
       "span",
       { class: "nums-share num" },
-      `${pct(value)} ${interval(ci)}`,
+      `${pct(share)} ${interval(ci)}`,
       state === "low_n" && h("span", { class: "nums-few" }, t("order.nums.few")),
     ),
-    h("span", { class: "nums-bar" }, intervalBar({ value, interval: ci, max: 1 })),
+    h("span", { class: "nums-bar" }, intervalBar({ value: share, interval: ci, max: 1 })),
   );
 }
 

@@ -1,7 +1,7 @@
 // What our layer shows under the medication field for one order context, by the backend's state:
 //   quiet    a calm chip with a grey dot (never a check: a check would read "this drug is approved"), "Numbers"
 //   no_data  a hatched, dashed chip: no number for this drug here, which is not the same as quiet
-//   notice   a one-line chip about the unit, no numbers
+//   notice   a one-line chip: an alert on the unit that does not apply to this order, no numbers
 //   info     a passive card: what is happening in full, this drug's numbers behind "Show details" (a warning at
 //            select is shown the same way; it asks only at signing)
 // Nothing here takes focus or blocks the order, and nothing names another drug.
@@ -11,7 +11,7 @@ import { icon } from "../../components/icons.js";
 import { h } from "../../dom.js";
 import { t } from "../../i18n.js";
 import { drugNumbers } from "./drug-numbers.js";
-import { ask, detailsLink, headline, line, notesSection, smallPrint, sourceLabel } from "./parts.js";
+import { detailsLink, line, notesSection, smallPrint, sourceLabel } from "./parts.js";
 import { previousLine, previousTable } from "./previous-results.js";
 
 const CHIP_TILE = { quiet: "P3", no_data: "gap", notice: "info" };
@@ -31,6 +31,7 @@ function chips(ctx, { appName, filters, draft, onDetails }) {
         { class: "sw-panel", id: "sw-more" },
         (ctx.previous_results ?? []).length > MINI_ROWS && previousTable(ctx, filters),
         drugNumbers(ctx, filters),
+        notesSection(ctx),
         foot(ctx, onDetails),
       )
     : null;
@@ -41,8 +42,8 @@ function chips(ctx, { appName, filters, draft, onDetails }) {
       h(
         "p",
         { class: ["sw-chip", ctx.state === "no_data" && "nodata"] },
-        tile(CHIP_TILE[ctx.state] ?? "info", "sm"),
-        h("span", null, ctx.chip),
+        tile(CHIP_TILE[ctx.state], "sm"),
+        h("span", { class: "sw-chip-text" }, ctx.chip),
         quiet && h("span", { class: "sw-chip-note" }, t("order.layer.quietNote")),
       ),
       panel && disclosure(panel, draft, t("order.layer.numbers")),
@@ -54,10 +55,6 @@ function chips(ctx, { appName, filters, draft, onDetails }) {
 }
 
 function infoCard(ctx, { appName, filters, draft, onDetails }) {
-  const title = headline(ctx);
-  // an older backend has no separate headline: its title is the text's first sentence, shown once
-  const text = line(ctx, "happening")?.text ?? "";
-  const happening = text.startsWith(title) ? text.slice(title.length).replace(/^[.\s]+/, "") : text;
   const more = h(
     "div",
     { class: "sw-more", id: "sw-more" },
@@ -73,10 +70,10 @@ function infoCard(ctx, { appName, filters, draft, onDetails }) {
       "div",
       { class: "sw-head" },
       tile("info", "sm"),
-      h("h3", { class: "sw-title", id: "sw-headline" }, title),
+      h("h3", { class: "sw-title", id: "sw-headline" }, ctx.headline),
       h("p", { class: "sw-meta" }, sourceLabel(appName, ctx)),
-      happening && h("p", { class: "sw-text" }, happening),
-      h("p", { class: "sw-ask" }, ask(ctx)),
+      h("p", { class: "sw-text" }, line(ctx, "happening")?.text),
+      h("p", { class: "sw-ask" }, ctx.ask),
       previousLine(ctx, filters),
     ),
     h(

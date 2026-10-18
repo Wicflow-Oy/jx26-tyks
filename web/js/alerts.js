@@ -9,9 +9,9 @@ import { mondayOf } from "./dates.js";
 const SEEDED_KINDS = ["phenotype_cluster", "thl_rule"];
 
 /**
- * Every alert approved by the as-of Monday, expired ones included (GET /api/alerts?include_expired=1).
- * A backend without include_expired returns the active ones only; then an expired alert simply is not shown.
- * A failure returns [] so the brief and the case file still render; their actions say what is known.
+ * Every alert approved by the as-of Monday, expired and revoked ones included (GET /api/alerts?include_expired=1),
+ * each with `expired` and `revoked_on` as known that Monday. A failure returns [] so the brief and the case file
+ * still render; their actions say what is known.
  */
 export const loadAlerts = ({ signal } = {}) =>
   get("/api/alerts", { include_expired: 1 }, { signal }).then(
@@ -30,12 +30,10 @@ export function alertState(item, asOf, known = []) {
   const monday = mondayOf(asOf);
   const linked = [item?.alert, ...known]
     .filter(Boolean)
-    .filter((alert) => isLinked(alert, item) && alert.approved_on <= monday)
-    .filter((alert) => !(alert.revoked_on && alert.revoked_on <= monday));
+    .filter((alert) => isLinked(alert, item) && alert.approved_on <= monday && !alert.revoked_on);
   const latest = linked.sort((a, b) => (a.approved_on < b.approved_on ? 1 : -1))[0];
   if (!latest) return { state: "none", alert: null };
-  const expired = latest.expired === true || monday > latest.expires_on;
-  return { state: expired ? "expired" : "active", alert: latest };
+  return { state: latest.expired ? "expired" : "active", alert: latest };
 }
 
 function isLinked(alert, item) {
