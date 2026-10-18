@@ -7,7 +7,7 @@ a Monday brief for infection control, My ward for ward doctors, and an order che
 
 ![The order check on a simulated order screen](docs/screenshots/order.png)
 
-Live demo: https://strainwatch.87-58-146-191.sslip.io (synthetic data; hosted in Helsinki)
+Live demo: https://strainwatch.wicflow.com (synthetic data; hosted in Helsinki)
 
 ## Run it
 Python 3.12 on macOS or Linux, with the challenge's `synthetic_microbiology_dataset.zip`:
