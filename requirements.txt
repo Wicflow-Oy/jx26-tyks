@@ -1,4 +1,4 @@
-# Runtime dependencies (pinned to the versions the tests ran on). Dev tools: pytest, ruff (not in the image).
+# Runtime dependencies (pinned to the versions the tests ran on). Test and lint tools: requirements-dev.txt.
 anthropic==1.15.0
 fastapi==0.143.3
 numpy==2.5.4

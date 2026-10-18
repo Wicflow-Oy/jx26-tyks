@@ -6,10 +6,10 @@ services:
       - traefik
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=${TRAEFIK_NETWORK:-n8n_default}"
-      - "traefik.http.routers.jx-tyks.rule=Host(`${TYKS_HOST:-tyks-demo.demo.wicflow.com}`)"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:?set TRAEFIK_NETWORK in .env}"
+      - "traefik.http.routers.jx-tyks.rule=Host(`${TYKS_HOST:?set TYKS_HOST in .env}`)"
       - "traefik.http.routers.jx-tyks.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
-      - "traefik.http.routers.jx-tyks.tls.certresolver=${TYKS_CERTRESOLVER:-zerossl}"
+      - "traefik.http.routers.jx-tyks.tls.certresolver=${TYKS_CERTRESOLVER:?set TYKS_CERTRESOLVER in .env}"
       - "traefik.http.services.jx-tyks.loadbalancer.server.port=8765"
       - "traefik.http.middlewares.jx-tyks-headers.headers.customresponseheaders.X-Robots-Tag=noindex, nofollow"
       - "traefik.http.middlewares.jx-tyks-headers.headers.referrerPolicy=no-referrer"
@@ -18,5 +18,5 @@ services:
 
 networks:
   traefik:
-    name: ${TRAEFIK_NETWORK:-n8n_default}
+    name: ${TRAEFIK_NETWORK:?set TRAEFIK_NETWORK in .env}
     external: true

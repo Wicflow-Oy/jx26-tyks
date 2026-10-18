@@ -1,8 +1,8 @@
-# Tyks public demo: base service. Compose project: jx-tyks. Operator guide: ../DEPLOY.md.
+# Strainwatch public demo: base service. Compose project: jx-tyks. Operator guide: ../DEPLOY.md.
 # Always combine with ONE proxy file:
 #   Traefik:      -f deploy/compose.yml -f deploy/compose.traefik.yml
 #   Caddy/nginx:  -f deploy/compose.yml -f deploy/compose.port.yml
-# Production box: act only on project jx-tyks. See DEPLOY.md.
+# Commands act only on project jx-tyks. The image's Dockerfile sets the app defaults and the healthcheck.
 name: jx-tyks
 
 services:
@@ -24,20 +24,11 @@ services:
     env_file:
       - path: ../.env
         required: true
-    environment:
-      - AEI_PUBLIC=1
-      - AEI_STATE_DB=/tmp/state.sqlite
     volumes:
       # The synthetic dataset (6 CSVs), copied to the box separately; never in git or in the image.
       - ${TYKS_DATA_DIR:-../data}:/app/data:ro
       # Precomputed caches survive restarts; safe to delete (they rebuild at start).
       - tyks-cache:/app/cache
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8765/api/health', timeout=5).status == 200 else 1)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
 
 volumes:
   tyks-cache:

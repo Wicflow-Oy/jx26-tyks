@@ -7,18 +7,18 @@ a Monday brief for infection control, My ward for ward doctors, and an order che
 
 ![The order check on a simulated order screen](docs/screenshots/order.png)
 
-Live demo: <link>
+Live demo: (link added at deploy)
 
 ## Run it
-Python 3.12 on macOS or Linux:
+Python 3.12 on macOS or Linux, with the challenge's `synthetic_microbiology_dataset.zip`:
 ```bash
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+unzip -j synthetic_microbiology_dataset.zip '*.csv' -d data
 .venv/bin/uvicorn aei.api:app --host 127.0.0.1 --port 8765
 ```
-Open http://127.0.0.1:8765. The app reads the challenge's 6 synthetic CSVs from the folder in `AEI_DATA_DIR`, or by
-default from the context repo cloned next to this one (`../jx26-tyks-context/data/synthetic_microbiology_dataset`).
-Without the data the server still starts and `/api/health` reports `"data_loaded": false`.
+Open http://127.0.0.1:8765. The app reads the 6 synthetic CSVs from `data/` (gitignored), or from the folder in
+`AEI_DATA_DIR`. Without them the server still starts and `/api/health` reports `"data_loaded": false`.
 Optional: `.venv/bin/python -m aei.precompute` (under a minute) fills the replay slider's weekly counts. No API key is
 needed: texts come from fixed templates.
 
@@ -39,6 +39,8 @@ Data flow, time model, privacy and how it fits a hospital: [ARCHITECTURE.md](ARC
 (data, evidence object, every endpoint, wording rules): [CONTRACTS.md](CONTRACTS.md).
 
 ## Folder map
+The product name lives in `aei/config.py` (`APP_NAME`); the Python package is `aei`, the web app `web/`, and the
+Docker Compose project and image `jx-tyks`.
 ```
 aei/                 the Python package
   config.py          every threshold, window, local line and env setting
@@ -56,7 +58,6 @@ aei/                 the Python package
   render.py, i18n.py number formats and the language layer
   narrator/          optional model wording, with spend and rate guard
   validator.py       checks on model text
-  jev.py             optional second-opinion adapter, inert by default
   store.py           SQLite demo state per session
   api.py             FastAPI app
   precompute.py      cache warm-up CLI
@@ -67,7 +68,7 @@ docs/screenshots/    README images
 ARCHITECTURE.md      data flow and design decisions
 CONTRACTS.md         the specification
 DEPLOY.md            running the public demo with Docker
-Dockerfile, requirements.txt, pyproject.toml, .env.example
+Dockerfile, requirements.txt, requirements-dev.txt, pyproject.toml, .env.example
 ```
 
 ## Where the key logic lives
@@ -82,15 +83,15 @@ Dockerfile, requirements.txt, pyproject.toml, .env.example
 
 ## Tests
 ```bash
-.venv/bin/pip install pytest httpx ruff && .venv/bin/python -m pytest -q
+.venv/bin/pip install -r requirements-dev.txt && .venv/bin/python -m pytest -q
 ```
-Offline, about a minute, and needs the dataset. Covered: data loading and first-isolate rules, every detector against
-known episodes in the data, strict as-of behaviour, coverage and small-n states, the order check's demo scenarios and
-its rule that it never names another drug, number formats, the validator and the narrator's fallbacks (with a fake
-client), English and Finnish texts, per-session state, and the API with its public-demo guards.
+Offline, about a minute, and needs the dataset (`data/` or `AEI_DATA_DIR`). Covered: data loading and first-isolate
+rules, every detector against known episodes in the data, strict as-of behaviour, coverage and small-n states, the order
+check's demo scenarios and its rule that it never names another drug, number formats, the validator and the narrator's
+fallbacks (with a fake client), English and Finnish texts, per-session state, and the API with its public-demo guards.
 [tests/test_against_source.py](tests/test_against_source.py) re-derives the headline numbers from the raw CSVs with
 plain pandas and requires the product to match. [tests/test_ui.py](tests/test_ui.py) clicks through the web app in
-Chromium; it skips without Playwright (`.venv/bin/pip install playwright && .venv/bin/playwright install chromium`).
+Chromium; it skips without a Playwright browser (`.venv/bin/playwright install chromium`).
 
 Lint and format:
 ```bash
@@ -106,8 +107,7 @@ cd web && npx --yes prettier@3 --check . && npx --yes eslint@9 .
 - **Mocked:** the hospital EHR order screen is a simulated stand-in for the patient record system, with no EHR
   connected; heads-ups to the emergency department are drafted and approved but never sent; the nightly lab extract is
   replaced by the synthetic CSVs.
-- **Optional:** the language model for heads-up wording, off without `ANTHROPIC_API_KEY`. The Jev second-opinion
-  adapter ([aei/jev.py](aei/jev.py)) stays inert without a key and a passing calibration.
+- **Optional:** the language model for heads-up wording, off without `ANTHROPIC_API_KEY`.
 
 ## Data sources and licences
 - **Dataset:** the synthetic microbiology dataset from the Tyks x Mylab challenge (10,000 patients, 24,571 isolates,

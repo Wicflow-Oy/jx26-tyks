@@ -1,4 +1,4 @@
-# Tyks demo (working name in aei/config.py APP_NAME). One container: FastAPI serves the API and the static web UI.
+# Strainwatch. One container: FastAPI serves the API and the static web UI.
 # Built from the repo on the server. Light build: binary wheels only (no compiling), ~70 MB of packages.
 # The synthetic dataset is NOT in the image or in git: it is bind-mounted read-only at /app/data (see DEPLOY.md).
 FROM python:3.12-slim

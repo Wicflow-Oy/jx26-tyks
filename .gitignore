@@ -5,7 +5,7 @@ __pycache__/
 .ruff_cache/
 .cache/
 # Synthetic dataset: no licence stated, never commit it (see README)
-data/
+/data
 *.csv
 *.pkl
 *.sqlite

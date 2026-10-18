@@ -84,7 +84,7 @@ flowchart TD
 
 ## The optional language model
 - Claude may word one thing: the drafted heads-up to the emergency department. Detection, every number and the order
-  check are deterministic; `cds.py` imports neither the narrator nor the second-opinion adapter (a test enforces it).
+  check are deterministic; `cds.py` never imports the narrator (a test enforces it).
 - The model writes a skeleton with `{slot}` placeholders and no numbers or number words. The validator checks it, code
   fills in the numbers, and the result is checked again. Any failure, refusal or cap falls back to the template.
 - It sees computed slots only (labels, counts, dates). A slot that looks like a patient or isolate id stops the call.

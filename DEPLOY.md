@@ -12,10 +12,9 @@ hostname, behind the host's existing reverse proxy.
 - **No key needed:** without `ANTHROPIC_API_KEY` the app makes no model calls; texts come from the fixed templates (or
   from wording recorded earlier, step 5). With a key, live calls are capped at $20 a day and rate-limited per IP.
 
-**Production rules** (assume the host runs other production services):
-- Only ever run commands with `-p jx-tyks`.
-- Never touch other compose projects, their containers or networks, or the proxy's own config.
-- Never restart Traefik, Caddy or nginx. A reload of one added site block is the most the proxy gets.
+**Safety** (the host may run other services):
+- Every command here names the project (`-p jx-tyks`) and touches nothing else.
+- The proxy keeps running: at most one added site block and a reload.
 
 This guide uses `/opt/jx/tyks` as the folder and `<host>` for the public hostname (the `TYKS_HOST` value).
 
@@ -47,8 +46,8 @@ docker compose version
   ```bash
   docker inspect <traefik-container> --format '{{json .Args}}'
   ```
-  Note the network, the TLS entrypoint and the cert resolver. The compose defaults are `n8n_default`, `websecure` and
-  `zerossl`; step 3 overrides them.
+  Note the network, the TLS entrypoint and the cert resolver; step 3 puts them in `.env` (the entrypoint defaults to
+  `websecure`).
 - **Memory:** about 1.2 GB free for the 1 GB container. **Disk:** about 0.5 GB for the image and cache.
 - **Compose:** 2.24 or newer (the compose file uses `env_file` with `required`).
 - **Case B only:** check that port 8765 is free.
@@ -80,8 +79,8 @@ for download. To keep it elsewhere, set `TYKS_DATA_DIR`.
 cp .env.example .env && chmod 600 .env
 ```
 Fill in `.env`; every variable is described in `.env.example`, and an empty value means the default.
-- **`TYKS_HOST`:** the hostname. Without DNS, `tyks-demo.<server-ip>.sslip.io` works.
-- **Case A:** `TRAEFIK_NETWORK`, `TYKS_CERTRESOLVER` and `TRAEFIK_ENTRYPOINT`, from the preflight.
+- **`TYKS_HOST`:** the hostname. Without DNS, `strainwatch.<server-ip>.sslip.io` works.
+- **Case A:** `TRAEFIK_NETWORK` and `TYKS_CERTRESOLVER` (required), and `TRAEFIK_ENTRYPOINT`, from the preflight.
 - **Case B:** `TYKS_PORT`, if 8765 is taken.
 - **`ANTHROPIC_API_KEY`:** optional, a key for this app only. Leave `AEI_NARRATOR` empty: in public mode that means
   `replay` (wording recorded earlier, see step 5, else the templates), with no live calls. Set it to `anthropic` only
@@ -108,7 +107,7 @@ This publishes on `127.0.0.1:8765` only. Add **one** site block for this hostnam
 	reverse_proxy 127.0.0.1:8765
 	header X-Robots-Tag "noindex, nofollow"
 	request_body {
-		max_size 1MB
+		max_size 64KB
 	}
 }
 ```
@@ -124,7 +123,7 @@ sudo systemctl reload caddy
 ```
 server {
     server_name <host>;
-    client_max_body_size 1m;
+    client_max_body_size 64k;
     add_header X-Robots-Tag "noindex, nofollow" always;
     access_log off;
     location / {
@@ -189,4 +188,4 @@ docker compose -p jx-tyks -f deploy/compose.yml -f deploy/compose.traefik.yml --
 Add `-v` to also delete its cache volume. In case B, also remove its Caddy or nginx site block and reload. Nothing else
 on the host is affected.
 
-If `--build` fails, stop there and report it; never patch other services to make it work.
+If `--build` fails, nothing else on the host has changed: fix the build and run the same command again.
