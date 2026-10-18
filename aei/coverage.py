@@ -1,4 +1,4 @@
-"""Coverage cells for My ward (CONTRACTS.md section 4.1). Ported from the analysis scripts 11_fixes, 26_trace and 36b.
+"""Coverage cells for My ward (CONTRACTS.md section 4.1).
 
 Coverage semantics: an isolate is covered when its effective result (`phenotype_rules.effective`, shared with the order
 view) is S, not covered when it is R, and left out of `tested` when it is untested. A combination ("MEM+VAN") is covered
@@ -6,7 +6,7 @@ when any member is covered. Intrinsic and no-breakpoint pairs are R: they count 
 
 Estimate rule (by `stats.n_state` of the tested count):
 - `ok` (>= 30): the observed share with its Jeffreys interval;
-- `low_n` (10..29): the stabilised estimate, i.e. the 36b "window WISCA". Each organism's window share is pooled with
+- `low_n` (10..29): the stabilised estimate (a "window WISCA"). Each organism's window share is pooled with
   k = POOLING_K pseudo-isolates toward the hospital-wide as-of rate for that organism (same specimen group), on top of a
   Jeffreys Beta(1/2, 1/2) prior, and the organism mix is a Dirichlet over the window counts plus 5 pseudo-isolates of
   the hospital mix. Median and 2.5/97.5 percentiles of `config.COVERAGE_DRAWS` draws from a fresh `stats.rng()`, so
@@ -31,7 +31,7 @@ from .phenotype_rules import SPECIES_LEVEL, effective
 
 KEYS = tuple(C.DRUGS) + tuple(C.COMBOS)  # every single drug and combination a cell can be built for
 KEY_INDEX = {k: i for i, k in enumerate(KEYS)}
-MIX_PSEUDO = 5  # hospital-mix pseudo-isolates in the organism-mix prior (26_trace)
+MIX_PSEUDO = 5  # hospital-mix pseudo-isolates in the organism-mix prior
 LOCAL_SETTING = 0.80  # stewardship's local coverage line (CONTRACTS 4.1)
 LOCAL_SETTING_LABEL = "local setting, set by stewardship"
 
@@ -128,7 +128,7 @@ def stabilised(
     sims: int = C.COVERAGE_DRAWS,
     rng: np.random.Generator | None = None,
 ) -> dict | None:
-    """36b window WISCA for one key: window shares pooled per organism toward the reference (hospital as-of) rate.
+    """Window WISCA for one key: window shares pooled per organism toward the reference (hospital as-of) rate.
 
     Returns {"pct", "ci", "excluded_share"} or None when no organism in the reference is tested for the key."""
     j = KEY_INDEX[key]
@@ -139,7 +139,7 @@ def stabilised(
     ph = (ref.cov[keep, j] + 0.5) / (ref.tst[keep, j] + 1)
     wc, wt = win.cov[keep, j], win.tst[keep, j]
     # The Jeffreys half on each side keeps an organism's share from collapsing to a point when the hospital rate is
-    # about 0 or 1 (k * (1 - ph) ~ 0.002 for E. coli meropenem gave 11 of 11 as "100 [100-100]"; my-ward #1).
+    # about 0 or 1 (k * (1 - ph) ~ 0.002 for E. coli meropenem gave 11 of 11 as "100 [100-100]").
     a = wc + k * ph + 0.5
     b = (wt - wc) + k * (1 - ph) + 0.5
     theta = rng.beta(a[:, None], b[:, None], size=(int(keep.sum()), sims))
@@ -229,7 +229,7 @@ def cell_from_counts(
         )
     share = tested / n_iso if n_iso else None
     anchor = hosp_prior if hosp_prior is not None else hosp
-    # a change is never claimed next to "not enough data" (my-ward #4)
+    # a change is never claimed next to "not enough data"
     changed = None if state == "not_enough_data" else _changed(covered, tested, prior, anchor, j)
     return {
         "drug": key,

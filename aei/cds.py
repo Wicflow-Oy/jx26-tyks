@@ -15,7 +15,7 @@ Results come from the shared `phenotype_rules.effective`, so the numbers equal M
 My ward's rules decide whether a number is shown at all (CONTRACTS 4.1): never for a urine-only drug outside urine,
 for a drug the indication's reference organism is intrinsically resistant to, or for a drug with a result on fewer
 than 90% of the population's isolates. Never a block and never a patient-level estimate. This module imports neither
-the narrator nor the second-opinion adapter (a test enforces it).
+the narrator (a test enforces it).
 
 Every text is rendered from a template (aei/templates_ui.py) or a glossary phrase in the language `lang` (aei/i18n.py):
 English by default, Finnish with lang="fi". Codes, ids and numbers do not change with the language.
@@ -35,7 +35,7 @@ from .phenotype_rules import REASON_TEXT, SPECIES_LEVEL, effective
 from .store import is_active
 
 SLUG = re.sub(r"[^a-z0-9]+", "-", C.APP_NAME.lower()).strip("-")
-SMALL_PRINT = "Observed unit-level information, not a prediction for this patient. The doctor decides."
+SMALL_PRINT = "Observed unit-level information about past results. The doctor decides."
 LAG_NOTE = f"Dates are sample dates; results usually arrive about {C.RESULT_LAG_DAYS} days later."
 ASK = "Consider whether this drug still fits. The decision is yours."
 SIGN_NOTE = "It will ask again when the order is signed."
@@ -254,7 +254,7 @@ def _acquired(h: dict) -> bool:
 
 
 def _species_notes(previous: list[dict], name: str, lang: str) -> list[str]:
-    """One passive note per organism whose R to this drug is a property of its species (clinical review D-M4)."""
+    """One passive note per organism whose R to this drug is a property of its species."""
     notes = {}
     for h in previous:
         if h["drug_result"] == "R" and h["reason"] in SPECIES_LEVEL and h["organism"] not in notes:

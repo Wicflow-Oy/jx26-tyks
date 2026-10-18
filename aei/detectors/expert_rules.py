@@ -1,5 +1,5 @@
-"""Phenotype consistency checks on reported results (config.EXPERT_RULES), ported from 40_esbl_flag and
-52_seen_before_expert_rules and widened per the clinical review (EUCAST Expert Rules v3.3).
+"""Phenotype consistency checks on reported results (config.EXPERT_RULES): the ESBL reporting
+rule and the EUCAST Expert Rules v3.3 checks.
 
 Row-level lab checks on every isolate (no deduplication: each implausible report is one result to check):
   esbl_ceph_s         ESBL-flagged but S to cefuroxime or ceftriaxone (local reporting rule)        golden 0 of 517

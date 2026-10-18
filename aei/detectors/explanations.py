@@ -1,4 +1,4 @@
-"""Competing explanations H1-H6 for a unit cluster, rated from counts only (port of analysis 19 and 41_replay_asof).
+"""Competing explanations H1-H6 for a unit cluster, rated from counts only.
 
 Cases: first isolate per patient of the marker (or, without a marker, a near-identical antibiogram of the organism) on
 the unit from `start` to `as_of`. Backgrounds are the 365 days before `start`. As in 41, a marker's unit history and
@@ -23,7 +23,7 @@ BACKGROUND_DAYS = 365
 EARLY_CARE_DAY = 2  # a sample on care day 1 or 2 was most likely taken at admission
 # The laboratory phenotype every isolate carrying a marker should show; a case without it points to a data problem
 MARKER_CHECK = {"mrsa": "FOX", "esbl": "CRO", "cpe": "MEM", "vre": "VAN"}
-NOTE = "Competing explanations rated from counts only (analysis 19/41). Phenotype is not genotype; typing advised."
+NOTE = "Competing explanations rated from counts only. Phenotype is not genotype; typing advised."
 
 
 def competing_explanations(
@@ -156,7 +156,7 @@ def competing_explanations(
             "same_window_earlier_years": other,
             "marker_consistent": consistent,
             "history_scope": (
-                f"all organisms with {ph.MARKER_LABELS[marker]} on the unit (as analysis 41)"
+                f"all organisms with {ph.MARKER_LABELS[marker]} on the unit"
                 if marker
                 else "the organism with a near-identical antibiogram on the unit"
             ),

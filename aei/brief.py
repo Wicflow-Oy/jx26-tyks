@@ -1,7 +1,7 @@
 """The Monday brief (CONTRACTS.md section 5.2): every registered detector for one as-of Sunday, grouped into sections,
 with status against the previous week, a unit / home-area map and priority counts.
 
-- Detectors come only from the registry (`aei.detectors`), so the brief works while some are missing.
+- Detectors come only from the registry (`aei.detectors`); a failing detector raises, so no partial week is cached.
 - Status: `new` if the id was not active at as_of - 7 days, `ongoing` if it was. A detector lists an item as `resolved`
   in the week after it stops, with a resolved text (what was last flagged and the value now); the brief keeps it
   only when it was active last week. Weekly lab checks (expert rules) have no resolved item.
@@ -45,8 +45,8 @@ SECTIONS = [
 ]
 PRIORITY_ORDER = {"P1": 0, "P2": 1, "P3": 2, "info": 3}
 STATUS_ORDER = {"new": 0, "ongoing": 1, "resolved": 2}
-FOOTER = "Every number links to its count and filter. Text narrated from computed numbers only."
-CACHE_SCHEMA = "b2-signals-v1"
+FOOTER = "Each item opens its case file with the counts and the filter. Texts are filled in from computed numbers only."
+CACHE_SCHEMA = "signals-v2"
 DEFAULT_RULE, DEFAULT_WINDOW = "readme_period", "4w"
 
 _MEM: dict = {}
@@ -130,8 +130,7 @@ def clear_memory_cache() -> None:
 def week_signals(
     ds, as_of, rule: str = DEFAULT_RULE, window: str = DEFAULT_WINDOW, cache: bool = True
 ) -> tuple[list, dict]:
-    """Raw detector output for one as-of date: (signals, {"ran", "skipped"}). Memory -> disk -> compute.
-    Bad parameters raise here: the registry skips a failing detector, so they would otherwise cache a partial week."""
+    """Raw detector output for one as-of date: (signals, {"ran"}). Memory -> disk -> compute."""
     if rule not in ("readme_period", "30d"):
         raise ValueError(f"unknown counting rule {rule}")
     if window not in C.WINDOWS:
@@ -144,7 +143,7 @@ def week_signals(
     path = _cache_path(as_of, rule, window)
     d = _read_cache(path, fp) if cache else None
     if d is not None:
-        res = (d["signals"], d.get("detectors", {"ran": [], "skipped": []}))
+        res = (d["signals"], d["detectors"])
     else:
         signals, report = registry.run(ds, as_of, rule=rule, window=window)
         signals = [to_json(s) for s in signals]

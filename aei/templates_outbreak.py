@@ -60,8 +60,8 @@ TEMPLATES = {
     "ob_thl_cluster_mixed": {
         "text": (
             "{ward}: {n_patients:int} {organism_label} patients since {first_date:short_date}; usually "
-            "{usual_low:int}–{usual_high:int} in that time. Heterogeneous: {n_profiles:int} antibiograms, ranked lower "
-            "by our rules (truth unknown). THL guidance: epidemic check (several findings above the usual level on one "
+            "{usual_low:int}–{usual_high:int} in that time. Heterogeneous: {n_profiles:int} antibiograms, so ranked "
+            "below a shared-antibiogram cluster. THL guidance: epidemic check (several findings above the usual level on one "
             "unit)."
         ),
         "title": "{ward}: more {organism_label} patients than usual",
@@ -196,7 +196,7 @@ def _seen_title(same: str, k: int) -> str:
 # cluster, so the cluster's own patients never make its antibiogram look common.
 for _s, _st in _SAME.items():
     for _k in range(len(C.WARD_LABELS)):
-        for _e, _bt in _background("Before this cluster").items():
+        for _e, _bt in _background("In all the data before this cluster").items():
             TEMPLATES[f"ob_seen_before__{_s}__{_k}__{_e}"] = {
                 "text": (
                     "{ward} {organism_label} pattern ({pattern}): "

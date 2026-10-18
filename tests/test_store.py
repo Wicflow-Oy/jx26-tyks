@@ -8,7 +8,7 @@ import pytest
 from aei import config as C
 from aei import store
 
-A, B = "judge-aaaa-0001", "judge-bbbb-0002"
+A, B = "visitor-aaaa-0001", "visitor-bbbb-0002"
 
 
 @pytest.fixture(autouse=True)

@@ -1,4 +1,4 @@
-"""Claude as a narrator that writes only skeletons (CONTRACTS.md sections 6 and 10).
+"""Claude as a narrator that writes only skeletons (CONTRACTS.md sections 6 and 9).
 
 Environment (read through config.env, where an empty value counts as unset):
 - AEI_MODEL: default claude-haiku-5-5.

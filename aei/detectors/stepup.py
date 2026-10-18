@@ -1,4 +1,4 @@
-"""Count step-up test per unit x marker (port of analysis 47_outbreak_prob, Model A). Supporting evidence only.
+"""Count step-up test per unit x marker. Supporting evidence only.
 
 Series: weekly new-patient counts (30-day de-duplication per patient within the marker) per unit x marker (MRSA, ESBL).
 At week t (the week holding as_of): y = the last 4 weeks; baseline = weeks t-55..t-4 (up to 52 weeks), with a Gamma
@@ -7,7 +7,7 @@ prior on the weekly rate pooled over the inpatient units (strength 13 weeks).
   BF = p(y | H1) / p(y | H0); score = pi * BF / (pi * BF + 1 - pi) with pi = 1%; the test is positive at score >= 0.8.
 It is a statistical test of a count step change, never a prediction, and never a P1. When a phenotype cluster or a
 THL cluster check covers the same unit and marker, the test is attached to that signal (evidence.stepup) and no
-separate item is shown. Otherwise it is a P3 item. The analysis found 0 positive quiet weeks in 18 series x 100 weeks.
+separate item is shown. Otherwise it is a P3 item. On this data it gives 0 positive quiet weeks in 18 series x 100 weeks.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ RECENT_WEEKS = 4  # y: new patients in the last 4 weeks, the week holding as_of 
 BASELINE_WEEKS = 52  # the up to 52 weeks before them
 DEDUP_DAYS = 30
 LABEL = (
-    "Count step-up test (Bayesian model comparison, analysis 47): a statistical test of a step change in new patients; "
+    "Count step-up test (Bayesian model comparison): a statistical test of a step change in new patients; "
     "supporting evidence only."
 )
 
@@ -82,6 +82,7 @@ def _score(ser, inp, w, m, t) -> dict | None:
     return {
         "week": t,
         "y4": y,
+        "recent_weeks": RECENT_WEEKS,
         "baseline_weeks": int(nb),
         "baseline_cases": int(base),
         "rate_prior_pooled": round(float(lam0), 4),

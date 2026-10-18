@@ -1,3 +1,5 @@
+import pandas as pd
+
 from aei import data
 
 
@@ -9,8 +11,8 @@ def test_counts(ds):
 
 def test_window_is_strictly_as_of(ds):
     w = data.window(ds.isolates, "2026-03-08", 28)
-    assert w.sample_date.max() <= __import__("pandas").Timestamp("2026-03-08")
-    assert w.sample_date.min() > __import__("pandas").Timestamp("2026-02-08")
+    assert w.sample_date.max() <= pd.Timestamp("2026-03-08")
+    assert w.sample_date.min() > pd.Timestamp("2026-02-08")
 
 
 def test_week_helpers():

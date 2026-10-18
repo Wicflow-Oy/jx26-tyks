@@ -1,4 +1,4 @@
-"""'Seen before': antibiogram fingerprint matching (port of analysis 52_seen_before_expert_rules). Profile match, not typing.
+"""'Seen before': antibiogram fingerprint matching. Profile match, not typing.
 
 Cluster mode, for each phenotype cluster shown at as_of: earlier patients with the same organism and exact antibiogram,
 before the cluster's first sample, on the same unit vs elsewhere (every unit named with its count), and the
@@ -6,8 +6,8 @@ antibiogram's background share among the population before the cluster (the mark
 or the organism with the same test panel). Counting the cluster's own patients would make its antibiogram look common
 because of the cluster itself.
 Return mode, for each past marker phenotype cluster (MRSA, ESBL, VRE, CPE) that has stopped: a new patient with the
-same organism and exact antibiogram on the same unit, with the background share among the population to date (as in
-analysis 52). Shown for 28 days after the latest such sample.
+same organism and exact antibiogram on the same unit, with the background share among the population to date.
+Shown for 28 days after the latest such sample.
 A share of 2% or more is labelled weak evidence (the ICU MRSA antibiogram is about a fifth of all MRSA patients).
 The share is printed as x of n, with a percentage and an evidence label from 10 patients up ("small n" below 30).
 Section seen_before, priority info. Strictly as-of: only isolates sampled on or before as_of are used.
@@ -40,7 +40,7 @@ def _patients_with(ds, as_of, organism, pattern) -> pd.DataFrame:
 
 def background(ds, as_of, organism, pattern, marker, before=None) -> dict:
     """Share of patients to date (or sampled before `before`) whose first isolate in the population has this
-    antibiogram (analysis 52)."""
+    antibiogram."""
     x = ph.upto(ds.isolates, as_of)
     x = x[x.organism == organism]
     if before is not None:
@@ -127,7 +127,7 @@ def _cluster_signal(ds, ep, as_of, rule) -> dict:
         },
         "counts": {**{k_: v for k_, v in mt.items() if k_ != "isolate_ids"}, **bg},
         "method": (
-            "seen before (analysis 52): earlier patients (first isolate each) with the same organism and exact "
+            "seen before: earlier patients (first isolate each) with the same organism and exact "
             "antibiogram before the cluster's first sample, by unit; background share among the population before the "
             "cluster"
         ),
@@ -249,7 +249,7 @@ def _return_signal(ds, item, as_of, rule) -> dict:
             **bg,
         },
         "method": (
-            "seen before, return mode (analysis 52): a new patient with the exact antibiogram of a stopped marker "
+            "seen before, return mode: a new patient with the exact antibiogram of a stopped marker "
             "cluster on the same unit; shown for 28 days after the latest such sample"
         ),
         "params": {"active_days": RETURN_ACTIVE_DAYS, "run_gap_days": RETURN_RUN_GAP_DAYS, "weak_share": WEAK_SHARE},

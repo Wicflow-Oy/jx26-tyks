@@ -1,10 +1,10 @@
-"""Ward outlier count (ported from 44_team_ideas (A) and 48_outlier_vs_detectors).
+"""Ward outlier count.
 
 For every ward x organism-drug cell (the 39 pairs) the last-4-week resistant count is compared with the unit's prior 52
 weeks pooled toward the hospital (beta-binomial, the same prior as resistance_change). A cell is "above its usual range"
 when the mid-p upper tail < 0.025 and it has enough isolates to speak of a rate: at least 10 tested or 3 resistant
-(B2 addition, not in 44/48: "1 of 1" is not a rate). A ward fires when >= 3 of its cells are above range in the same
-week (48: about 2 chance episodes a year on the unmodified data, vs about 15 at >= 2). Other units' high cells are shown
+("1 of 1" is not a rate). A ward fires when >= 3 of its cells are above range in the same
+week (about 2 chance episodes a year on the unmodified data, vs about 15 at >= 2). Other units' high cells are shown
 for contrast. The text names every high cell with its count, and the evidence lists the isolates those cells counted.
 In the week after a ward stops firing it is listed as resolved.
 """
@@ -25,8 +25,7 @@ MIN_TESTED = C.SMALL_N_NONE  # a cell needs this many tested isolates ...
 MIN_RESISTANT = rc.MIN_RESISTANT  # ... or this many resistant ones to count as above its range
 METHOD = (
     "ward outlier count: organism-drug cells whose last-window resistance is above the unit's usual range "
-    "(beta-binomial mid-p < 0.025; at least 10 tested or 3 resistant), >= 3 cells on one ward (44_team_ideas, "
-    "48_outlier_vs_detectors)"
+    "(beta-binomial mid-p < 0.025; at least 10 tested or 3 resistant), >= 3 cells on one ward"
 )
 
 

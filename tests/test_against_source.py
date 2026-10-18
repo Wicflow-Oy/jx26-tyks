@@ -17,7 +17,7 @@ from aei.detectors import (
     thl,
 )
 
-RAW = C.DATA_DIR  # the same place aei/data.py reads from (AEI_DATA_DIR or the context repo)
+RAW = C.DATA_DIR  # the same place aei/data.py reads from (AEI_DATA_DIR or data/)
 if not (RAW / "isolates.csv").is_file():
     pytest.skip(f"synthetic dataset not found in {RAW}", allow_module_level=True)
 
@@ -163,10 +163,10 @@ def test_expert_rule_counts_over_every_isolate(ds):
         == (517, 0)
     )
     assert (len(mrsa), int((mrsa.FOX == "S").sum())) == tuple(product["mrsa_fox_s"].values()) == (111, 0)
-    # was 109 in two overlapping rules for E. coli and K. pneumoniae only: now one rule (brief review D7) whose scope
-    # adds K. oxytoca and P. mirabilis (clinical review D-L6)
+    # was 109 in two overlapping rules for E. coli and K. pneumoniae only: now one rule whose scope
+    # adds K. oxytoca and P. mirabilis
     assert int(cro_r_amp_or_cxm_s.sum()) == product["cro_r_amp_or_cxm_s"]["hits"] == 139
-    assert int(tzp_r_amp_s.sum()) == product["tzp_r_amp_s"]["hits"] == 276  # new rule (clinical review D-L6)
+    assert int(tzp_r_amp_s.sum()) == product["tzp_r_amp_s"]["hits"] == 276  # new rule
 
 
 def test_phc_s_data_gap_week_ending_14_dec_2025(ds):
@@ -238,7 +238,6 @@ def test_uro_esbl_seed_alert_matches_the_data():
     [antibiogram] = run.apply(profile, axis=1).unique()
     resistant = [d for d in README_DRUG_ORDER if f"{d}:R" in antibiogram.split()]
     assert resistant == ["AMP", "CXM", "CRO", "CIP", "TMP"] == s["resistant_to"] == s["drugs"]
-    assert "(ampicillin, cefuroxime, ceftriaxone, ciprofloxacin and trimethoprim R)" in s["message"]
     assert window(esbl, "2025-05-29", 364).patient_id.nunique() == 11  # "usually about 1 ESBL E. coli patient a month"
 
 
@@ -246,9 +245,7 @@ def test_icu_mrsa_seed_alert_matches_the_data():
     s, run = seed("seed-icu-mrsa-2026"), icu_mrsa("2026-03-08")
     assert run.patient_id.nunique() == 3 and set(run.apply(profile, axis=1)) == {"FOX:R VAN:S CLI:R"}
     assert run.sample_date.min() == pd.Timestamp("2026-03-03")
-    assert (
-        "3 patients sampled 3 to 8 Mar with one antibiogram (cefoxitin R, clindamycin R, vancomycin S)" in s["message"]
-    )
+    assert "3 patients sampled 3 to 8 Mar with one antibiogram" in s["message"]
     # its reported R plus every beta-lactam on the panel (MRSA: EUCAST Staphylococcus expert rule 1)
     assert set(s["resistant_to"]) == set(s["drugs"]) == {"FOX", "CLI"} | BETA_LACTAMS_ON_PANEL
 

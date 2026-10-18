@@ -23,7 +23,8 @@ RULE_LABELS = {
     "readme_period": "First isolate per patient, organism and specimen in the period (dataset README)",
     "30d": "First isolate per patient, organism and specimen in 30 days",
 }
-# Not empirical treatments for a urinary tract infection; in urine they are almost all intrinsic R (clinical D-L12)
+# Not empirical treatments for a urinary tract infection (alone or in a combination); in urine they are almost all
+# intrinsic R
 NOT_FOR_URINE = {"CLI", "VAN"}
 PRIOR_DAYS = C.WINDOWS["12m"]  # "the prior 52 weeks" before a window
 _DAY = pd.Timedelta(days=1)
@@ -124,7 +125,7 @@ def _is_urine(specimen_group: str) -> bool:
 def _window_counts(unit: ag.Subset, hosp: ag.Subset, as_of: pd.Timestamp, days: int, rule: str):
     lo = as_of - pd.Timedelta(days=days)
     plo = lo - pd.Timedelta(days=PRIOR_DAYS)
-    # a "prior 52 weeks" that starts before the data does is a partial year, so no change is claimed (my-ward #6)
+    # a "prior 52 weeks" that starts before the data does is a partial year, so no change is claimed
     prior = unit.counts(plo, lo, rule) if plo + _DAY >= _DATA_START else None
     return unit.counts(lo, as_of, rule), prior, hosp.counts(plo, lo, rule), {"from": _s(lo + _DAY), "to": _s(as_of)}
 
@@ -188,7 +189,7 @@ def _check_drug(key: str, specimen_group: str) -> None:
         raise ValueError(f"{cv.label(key)} is a screening test, not a therapy option")
     if any(p in C.URINE_ONLY for p in ps) and not _is_urine(specimen_group):
         raise ValueError(f"{cv.label(key)} is shown for urine only")
-    if all(p in NOT_FOR_URINE for p in ps) and _is_urine(specimen_group):
+    if any(p in NOT_FOR_URINE for p in ps) and _is_urine(specimen_group):
         raise ValueError(f"{cv.label(key)} is not shown for urine")
 
 
@@ -242,12 +243,12 @@ def my_ward(
         if any(p in C.URINE_ONLY for p in ps) and not urine:
             not_shown.append({**entry, "code": "urine_only", "reason": reason("urine_only", k)})
             continue
-        if all(p in NOT_FOR_URINE for p in ps) and urine:
+        if any(p in NOT_FOR_URINE for p in ps) and urine:
             not_shown.append({**entry, "code": "not_for_urine", "reason": reason("not_for_urine", k)})
             continue
         tested = [w for w in windows if cells[w][k]["observed"]["tested"] > 0]
         if tested and not any(cv.has_result(wcounts[w], k) for w in tested):
-            # only EUCAST species rules behind every number: "0 of 957 covered" would read as a lab result (my-ward #2)
+            # only EUCAST species rules behind every number: "0 of 957 covered" would read as a lab result
             w = max(tested, key=lambda w: C.WINDOWS[w])
             not_shown.append(
                 {
@@ -328,7 +329,7 @@ def my_ward(
 
 def filters_catalog(ds, lang="en") -> dict:
     """Everything the filter bar can offer, from config and the data. No counts: the catalogue has no as_of, and
-    whole-dataset counts would include isolates sampled after the replay date (audit #8, my-ward #10)."""
+    whole-dataset counts would include isolates sampled after the replay date."""
     wt = ds.isolates.groupby("ward_code")["ward_type"].first().to_dict()
     return to_json(
         {

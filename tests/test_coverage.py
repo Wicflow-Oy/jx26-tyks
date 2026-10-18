@@ -141,11 +141,11 @@ def test_changed_flag_on_not_covered_counts():
     assert quiet["changed"]["changed"] is False and quiet["changed"]["direction"] is None
     assert cv.cell(win, "MEM")["changed"] is None  # no prior baseline
     tiny = _rows([(ECOLI, {"MEM": "R" if i < 4 else "S"}) for i in range(9)])
-    assert cv.cell(tiny, "MEM", prior_rows=prior)["changed"] is None  # 4 of 9: not enough data (my-ward #4)
+    assert cv.cell(tiny, "MEM", prior_rows=prior)["changed"] is None  # 4 of 9: not enough data
 
 
 def test_stabilised_interval_never_collapses_at_all_or_none_covered():
-    """my-ward #1: 11 of 11 against a hospital rate of ~100% printed "100 [100-100]" before the Jeffreys floor."""
+    """11 of 11 against a hospital rate of ~100% printed "100 [100-100]" before the Jeffreys floor."""
     ref = cv.counts_of(_rows([(ECOLI, {"MEM": "S", "VAN": "S"})] * 5000))
     win = cv.counts_of(_rows([(ECOLI, {"MEM": "S"})] * 11))
     mem, van = cv.stabilised(win, ref, "MEM"), cv.stabilised(win, ref, "VAN")  # E. coli VAN: intrinsic, 0 of 11
@@ -155,7 +155,7 @@ def test_stabilised_interval_never_collapses_at_all_or_none_covered():
 
 # ---------------------------------------------------------------- goldens on the real (synthetic) dataset
 def _frames(ds, ward, sg, as_of, rule, days=28):
-    """The 36b frames: unit window, unit prior 52 weeks, hospital (same specimen group) up to as-of, hospital prior."""
+    """The frames: unit window, unit prior 52 weeks, hospital (same specimen group) up to as-of, hospital prior."""
     x = ds.isolates
     a = pd.Timestamp(as_of)
     lo = a - pd.Timedelta(days=days)
@@ -170,10 +170,10 @@ def _frames(ds, ward, sg, as_of, rule, days=28):
 
 
 # Pinned from this implementation; every value equals a 400,000-draw run to the displayed integer. Tuple: (stabilised
-# pct, ci lo, ci hi, covered, tested). "30d" is 36b's counting rule: its observed counts equal 36b_coverage_asof.txt.
-# Re-pinned from 36b's printed estimates (ICU MEM 74 [61-85], TZP 73 [60-84], VAN 78 [62-91]; URO CRO 70 [60-78],
+# pct, ci lo, ci hi, covered, tested). "30d" is the 30-day counting rule of the original coverage analysis.
+# Re-pinned from that analysis's printed estimates (ICU MEM 74 [61-85], TZP 73 [60-84], VAN 78 [62-91]; URO CRO 70 [60-78],
 # CIP 70 [60-78], NIT 90 [83-95]): E. faecalis meropenem has no EUCAST breakpoint (v16.1), each organism's share has a
-# Jeffreys floor (my-ward #1) and the draws went from 4,000 to 40,000 (my-ward #5).
+# Jeffreys floor and the draws went from 4,000 to 40,000.
 GOLDEN = {
     ("30d", "ICU", "blood_wound", "2026-03-29"): {
         "n": 24,
@@ -211,7 +211,7 @@ def test_goldens_under_both_counting_rules(ds, case):
     orgs = tuple(sorted(ds.isolates.organism.unique()))
     W, H = cv.counts_of(win, orgs), cv.counts_of(hosp, orgs)
     for drug, (m, lo, hi, x, n) in ((k, v) for k, v in g.items() if k != "n"):
-        s = cv.stabilised(W, H, drug)  # the window WISCA value (36b method)
+        s = cv.stabilised(W, H, drug)  # the window WISCA value
         assert s["pct"] == pytest.approx(m, abs=0.002) and s["ci"] == pytest.approx([lo, hi], abs=0.002), drug
         c = cv.cell(win, drug, prior, hosp, hosp_prior_rows=hprior)
         assert (c["observed"]["covered"], c["observed"]["tested"]) == (x, n)
@@ -227,7 +227,7 @@ def test_icu_march_cell_matches_contract_example(ds):
     assert c["drug"] == "MEM" and c["label"] == "Meropenem" and c["aware"] == "Watch" and c["state"] == "low_n"
     assert c["observed"]["covered"] == 11 and c["observed"]["tested"] == 24
     assert round(c["observed"]["pct"], 3) == 0.458 and [round(v, 2) for v in c["observed"]["ci"]] == [0.27, 0.65]
-    # re-pinned from 0.74 [0.61, 0.85]: no E. faecalis meropenem breakpoint, and the Jeffreys floor (my-ward #1)
+    # re-pinned from 0.74 [0.61, 0.85]: no E. faecalis meropenem breakpoint, and the Jeffreys floor
     assert round(c["estimate"]["pct"], 2) == 0.72 and [round(v, 2) for v in c["estimate"]["ci"]] == [0.58, 0.83]
     assert c["eligible"] is True and c["tested_share"] == 1.0 and c["below_local_setting"] is True
     # p re-pinned from < 1e-6: the prior year's 21 E. faecalis now count as meropenem R too (no breakpoint, EUCAST v16.1)
@@ -236,7 +236,7 @@ def test_icu_march_cell_matches_contract_example(ds):
 
 
 def test_fast_path_equals_dataframe_path(ds):
-    """views use aggregates.Subset slices; they must give the same cell as coverage.cell on DataFrames."""
+    """Views use aggregates.Subset slices; they must give the same cell as coverage.cell on DataFrames."""
     win, prior, hosp, hprior = _frames(ds, "ICU", "blood_wound", "2026-03-29", "readme_period")
     a = pd.Timestamp("2026-03-29")
     lo = a - pd.Timedelta(days=28)

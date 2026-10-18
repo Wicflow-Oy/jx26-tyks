@@ -1,7 +1,7 @@
 """Policy lines (config.POLICY_LINES): rolling 52-week resistance under the line's own counting rule; fires while >= threshold.
 
-Ported from 51_codex_fixes_check (README rule: first isolate per patient inside the rolling window, among tested isolates)
-and 07/11 (the 30-day episode rule, `first_30d`). The line's `counting_rule` governs the policy item and the order card,
+Counting rules: the dataset README's rule (first isolate per patient inside the rolling window, among tested
+isolates) or the 30-day episode rule (`first_30d`). The line's `counting_rule` governs the policy item and the order card,
 so the brief's rule toggle does not move the line; `policy_states(..., rule="30d")` shows the 30-day count.
 
 `policy_states(ds, as_of)` is read by the order screen and My ward banners: exact counts, Jeffreys interval, the rate
@@ -20,7 +20,7 @@ from ..data import to_json
 from ..i18n import short_organism
 from . import drug_label, ds_key, iso, ts, ward_label
 
-METHOD = "rolling 52-week resistant share under the policy line's counting rule (51_codex_fixes_check)"
+METHOD = "rolling 52-week resistant share under the policy line's counting rule"
 _POP: dict = {}
 _RATES: "OrderedDict[tuple, tuple[int, int]]" = OrderedDict()
 _RATES_MAX = 4096

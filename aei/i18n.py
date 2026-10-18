@@ -1,4 +1,4 @@
-"""The language layer: English (the default) and Finnish, for the Tyks clinical microbiologist.
+"""The language layer: English (the default) and Finnish.
 
 Deliberately simple. Every text the API returns is rendered from a template id and its slots (aei/templates*.py):
 - `FI` (aei/templates_fi.py) holds the Finnish template for every template id, with exactly the same slots and formats
@@ -142,8 +142,9 @@ LABELS = _drug_labels() | {
     "Dates are sample dates; results usually arrive a couple of days later.": (
         "Päivämäärät ovat näytteenottopäiviä; tulokset valmistuvat yleensä muutaman päivän kuluttua."
     ),
-    "Every number links to its count and filter. Text narrated from computed numbers only.": (
-        "Jokainen luku on linkki laskentaansa ja suodattimeensa. Tekstit on muodostettu vain lasketuista luvuista."
+    "Each item opens its case file with the counts and the filter. Texts are filled in from computed numbers only.": (
+        "Jokainen kohta avaa tapauksen tiedot laskentoineen ja suodattimineen. Tekstit täytetään vain lasketuista "
+        "luvuista."
     ),
     "Typing advised": "Tyypitystä suositellaan",
     "Lab check": "Laboratorion tarkistus",
@@ -233,9 +234,8 @@ LABELS = _drug_labels() | {
     "Shown with the phenotype cluster instead of as a separate card.": (
         "Näytetään fenotyyppiryppään yhteydessä erillisen kortin sijaan."
     ),
-    "Competing explanations rated from counts only (analysis 19/41). Phenotype is not genotype; typing advised.": (
-        "Kilpailevat selitykset on arvioitu vain lukumääristä (analyysit 19/41). Fenotyyppi ei ole genotyyppi; "
-        "tyypitystä suositellaan."
+    "Competing explanations rated from counts only. Phenotype is not genotype; typing advised.": (
+        "Kilpailevat selitykset on arvioitu vain lukumääristä. Fenotyyppi ei ole genotyyppi; tyypitystä suositellaan."
     ),
     "strong": "vahva",
     "moderate": "kohtalainen",
@@ -282,8 +282,8 @@ LABELS = _drug_labels() | {
         "Harkitse, sopiiko tämä lääke edelleen. Päätös on sinun."
     ),
     "It will ask again when the order is signed.": "Kysymys toistetaan, kun määräys allekirjoitetaan.",
-    "Observed unit-level information, not a prediction for this patient. The doctor decides.": (
-        "Havaittua yksikkötason tietoa, ei arvio tämän potilaan tilanteesta. Lääkäri päättää."
+    "Observed unit-level information about past results. The doctor decides.": (
+        "Havaittua yksikkötason tietoa aiemmista tuloksista. Lääkäri päättää."
     ),
     f"Dates are sample dates; results usually arrive about {C.RESULT_LAG_DAYS} days later.": (
         f"Päivämäärät ovat näytteenottopäiviä; tulokset valmistuvat yleensä noin {C.RESULT_LAG_DAYS} päivää myöhemmin."
@@ -349,21 +349,20 @@ LABELS = _drug_labels() | {
     ),
     # the demo seeds' alert messages (config.DEMO_ALERT_SEEDS), as infection control would write them in Finnish
     (
-        "Possible ESBL E. coli cluster, URO: 6 patients sampled 30 May to 8 Jun with one antibiogram (ampicillin, "
-        "cefuroxime, ceftriaxone, ciprofloxacin and trimethoprim R). Usually about 1 ESBL E. coli patient a month. "
-        "Under investigation."
+        "Possible ESBL E. coli cluster, URO: 6 patients sampled 30 May to 8 Jun with one antibiogram. Usually about "
+        "1 ESBL E. coli patient a month. Under investigation."
     ): (
         "Mahdollinen ESBL E. coli -rypäs, URO: 6 potilasta, näytteet 30. toukokuuta – 8. kesäkuuta, sama "
-        "herkkyysprofiili (ampisilliini, kefuroksiimi, keftriaksoni, siprofloksasiini ja trimetopriimi R). "
+        "herkkyysprofiili. "
         "Tavallisesti noin 1 ESBL E. coli -potilas kuukaudessa. Selvitys käynnissä."
     ),
     (
-        "Unusual MRSA pattern, ICU: 3 patients sampled 3 to 8 Mar with one antibiogram (cefoxitin R, clindamycin R, "
-        "vancomycin S). None of the beta-lactams on this panel cover MRSA. Under investigation; typing advised."
+        "Unusual MRSA pattern, ICU: 3 patients sampled 3 to 8 Mar with one antibiogram. MRSA is resistant to every "
+        "beta-lactam on this panel. Under investigation; typing advised."
     ): (
-        "Poikkeava MRSA-löydöskuvio, ICU: 3 potilasta, näytteet 3.–8. maaliskuuta, sama herkkyysprofiili (kefoksitiini "
-        "R, klindamysiini R, vankomysiini S). Mikään tämän paneelin beetalaktaameista ei kata MRSA:ta. Selvitys "
-        "käynnissä; tyypitystä suositellaan."
+        "Poikkeava MRSA-löydöskuvio, ICU: 3 potilasta, näytteet 3.–8. maaliskuuta, sama herkkyysprofiili. MRSA on "
+        "resistentti "
+        "kaikille tämän paneelin beetalaktaameille. Selvitys käynnissä; tyypitystä suositellaan."
     ),
 }
 

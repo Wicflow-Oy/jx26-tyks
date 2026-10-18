@@ -24,7 +24,7 @@ def seeds(tmp_path, monkeypatch):
     monkeypatch.setattr(C, "STATE_DB", tmp_path / "state.sqlite")
     store.reset()
     store.seed_demo()
-    return store.alerts("judge-cccc-0003")
+    return store.alerts("visitor-cccc-0003")
 
 
 def _context(ds, seeds, key, stage="sign", **change):
@@ -66,11 +66,11 @@ def test_demo_scenarios_reach_their_expected_state(ds, seeds, key):
     ("key", "headline"),
     [
         # the headline is read from the alert, the patient's isolate or the line, never written freehand
-        ("uro-esbl", "Possible ESBL E. coli cluster on Urology. The flagged antibiogram is R to ceftriaxone."),
+        ("uro-esbl", "Possible ESBL E. coli cluster, Urology. The flagged antibiogram is R to ceftriaxone."),
         (
             "icu-mrsa",
             (
-                "Possible MRSA cluster on Intensive care unit. The flagged antibiogram is R to cefuroxime (inferred: "
+                "Possible MRSA cluster, Intensive care unit. The flagged antibiogram is R to cefuroxime (inferred: "
                 "MRSA, cefoxitin screen positive)."
             ),
         ),
@@ -84,13 +84,13 @@ def test_headline_comes_from_the_data(ds, seeds, key, headline):
 
 
 def test_uro_esbl_woman_sees_the_clone_in_her_population(ds, seeds):
-    # order-view #7: a woman on URO, like 10 of the 11 clone patients; the verifier's raw-CSV derivation gives these
+    # a woman on URO, like 10 of the 11 clone patients; the raw-CSV derivation gives these
     nums = _line(_context(ds, seeds, "uro-esbl"), "your_drug")["numbers"]
     assert (nums["r"], nums["n"], nums["r12"], nums["n12"]) == (10, 29, 16, 257)
 
 
 def test_no_data_looks_different_from_quiet(ds, seeds):
-    # URO bloodstream meropenem became info once MSSA counts (clinical D-H2); URO has no wound cultures at all
+    # URO bloodstream meropenem became info once MSSA counts; URO has no wound cultures at all
     no_data = cds.order_context(ds, "2026-03-15", None, "URO", "wound", "MEM", "sign", seeds, [])
     assert no_data["state"] == "no_data"
     assert no_data["chip"] == "Not enough data on URO for meropenem (n = 0, last 52 weeks)"
@@ -134,7 +134,7 @@ def test_flucloxacillin_under_the_mrsa_alert_says_how_it_is_read(ds, seeds):
 
 # --------------------------------------------------------------------------- which numbers may be shown
 def test_order_screen_equals_my_ward_for_the_same_population(ds, seeds):
-    """One shared effective-result function (clinical D-H2): ICU wound cefuroxime is 41 of 132, not 41 of 74."""
+    """One shared effective-result function: ICU wound cefuroxime is 41 of 132, not 41 of 74."""
     ward = views.my_ward(ds, "2026-03-15", "ICU", specimen_group="wound", windows="4w,12m")
     cells = {r["drug"]: r["cells"] for r in ward["rows"]}
     for drug in ("TZP", "CXM", "CRO", "MEM", "VAN", "CLI"):
@@ -154,7 +154,7 @@ def test_order_screen_equals_my_ward_for_the_same_population(ds, seeds):
 @pytest.mark.parametrize(
     ("as_of", "patient_id", "unit", "indication", "drug", "chip"),
     [
-        # clinical D-H4 and order-view #3: pairs the laboratory never reports get a reason, never a number
+        # pairs the laboratory never reports get a reason, never a number
         ("2026-09-27", "P001889", "PHC-S", "uti", "CAZ", "Ceftazidime: not tested on E. coli in this panel"),
         ("2026-06-21", "P001889", "PHC-N", "uti", "VAN", "Vancomycin: EUCAST lists E. coli as intrinsically resistant"),
         ("2026-03-15", "P008135", "ED", "uti", "FOX", "Flucloxacillin: EUCAST has no breakpoint for E. coli"),
@@ -213,7 +213,7 @@ def test_previous_results_come_first_and_own_resistance_warns(ds, seeds):
 @pytest.mark.parametrize(
     ("as_of", "patient_id", "unit", "drug", "note"),
     [
-        # order-view #5 / clinical D-M6: the laboratory reported this C. freundii cefuroxime S; no breakpoint, not "intrinsic"
+        # the laboratory reported this C. freundii cefuroxime S; no breakpoint, not "intrinsic"
         (
             "2026-03-08",
             "P006986",
@@ -221,7 +221,7 @@ def test_previous_results_come_first_and_own_resistance_warns(ds, seeds):
             "CXM",
             "Cefuroxime: EUCAST has no breakpoint for C. freundii (this patient's urine isolate of 16 Jun 2025).",
         ),
-        # order-view #6 / clinical D-M4: another species' intrinsic resistance is a note, not a warning
+        # another species' intrinsic resistance is a note, not a warning
         (
             "2026-06-21",
             "P002543",
@@ -238,7 +238,7 @@ def test_species_resistance_is_a_note_never_a_warning(ds, seeds, as_of, patient_
 
 
 def test_a_species_rule_keeps_the_laboratorys_own_result(ds, seeds):
-    """Re-verification #5: C. freundii cefuroxime counts as R (no EUCAST breakpoint), and the reported S stays visible."""
+    """C. freundii cefuroxime counts as R (no EUCAST breakpoint), and the reported S stays visible."""
     ctx = cds.order_context(ds, "2026-03-08", "P006986", "PHC-S", "uti", "CXM", "sign", seeds, [])
     row = next(r for r in ctx["previous_results"] if r["organism"] == "Citrobacter freundii")
     assert (row["date"], row["drug_result"], row["reason"], row["reported_result"]) == (
@@ -268,8 +268,8 @@ def test_an_untested_share_rounds_half_up_from_the_counts():
 
 # --------------------------------------------------------------------------- it speaks rarely and never names a drug
 def test_it_never_names_another_drug(ds, seeds):
-    """The product decision (18 Oct): the layer flags the drug entered and the doctor chooses. The alert's own message may
-    quote the flagged antibiogram; nothing the layer writes names a drug other than the one ordered."""
+    """The layer flags the drug entered and the doctor chooses: nothing it writes, the alert's own message included,
+    names a drug other than the one ordered."""
     for key, s in SCENARIOS.items():
         for stage in cds.STAGES:
             ctx = _context(ds, seeds, key, stage)
@@ -316,7 +316,7 @@ def test_trimethoprim_policy_card(ds, seeds):
     assert card["source"] == {"label": f"{C.APP_NAME} · infection control"}
     detail = card["detail"]
     assert detail.startswith("**This patient's results")
-    # "a year earlier" and "This drug in this population": order-view #10 and the 364-day window (my-ward D8)
+    # "a year earlier" and "This drug in this population": the 364-day window
     for text in (
         TMP_POPULATION,
         "Same window a year earlier: 15.9%",
@@ -328,7 +328,7 @@ def test_trimethoprim_policy_card(ds, seeds):
         assert text in detail
     assert "pivmecillinam" not in detail.lower() and "suggestions" not in card  # it names no other drug
     assert card["overrideReasons"][0]["code"] == "keep" and card["overrideReasons"][0]["display"] == "Keep trimethoprim"
-    assert [link["type"] for link in card["links"]] == ["absolute"]  # no SMART launch in the demo (audit #11)
+    assert [link["type"] for link in card["links"]] == ["absolute"]  # no SMART launch in the demo
     assert card["links"][0] == {
         "label": cds.DETAILS_LABEL,
         "type": "absolute",
@@ -398,7 +398,7 @@ def test_cds_hooks_requests_that_say_nothing_or_are_malformed(ds, seeds):
     with pytest.raises(cds.OrderError):
         cds_hooks.parse_hook_request(sign, broken)
     listed = _hook_request("order-sign")
-    listed["context"]["patientId"] = ["P001948", "P001889"]  # audit #10: once a pandas error text reached the client
+    listed["context"]["patientId"] = ["P001948", "P001889"]  # once a pandas error text reached the client
     with pytest.raises(cds.OrderError, match="^patientId must be text$"):
         cds_hooks.parse_hook_request(sign, listed)
     unknown_drug = cds_hooks.parse_hook_request(sign, _hook_request("order-sign", atc="J01DC01"))  # cefoxitin: a screen
@@ -441,11 +441,8 @@ def test_banners_for_my_ward(ds, seeds):
     assert cds.banners("2026-06-21", "PHC-N", seeds, states, specimen_group="blood_wound") == []
 
 
-def test_cds_imports_neither_narrator_nor_jev():
-    code = (
-        "import sys, aei.cds, aei.cds_hooks; print(sorted(m for m in sys.modules if m.startswith(('aei.narrator', "
-        "'aei.jev'))))"
-    )
+def test_cds_never_imports_the_narrator():
+    code = "import sys, aei.cds, aei.cds_hooks; print(sorted(m for m in sys.modules if m.startswith('aei.narrator')))"
     out = subprocess.run(
         [sys.executable, "-c", code],
         cwd=Path(__file__).resolve().parents[1],

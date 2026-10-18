@@ -1,7 +1,6 @@
 """Trend detectors (policy, resistance_change, outlier, expert_rules, completeness) and the registry.
-Offline and deterministic; uses the session `ds` fixture. Goldens from CONTRACTS.md section 5.2 and analysis 35/39/40/44/51/52."""
+Offline and deterministic; uses the session `ds` fixture. Goldens from CONTRACTS.md section 5.2."""
 
-import logging
 import re
 import sys
 import time
@@ -98,7 +97,7 @@ def comparable(sigs: list) -> list:
 
 
 def tmp_women_primary_care(ds, end) -> tuple[int, int]:
-    """51_codex_fixes_check by hand: tested urinary E. coli from women in primary care, first per patient in the
+    """The policy line by hand: tested urinary E. coli from women in primary care, first per patient in the
     52 weeks ending `end`; returns (resistant, tested)."""
     x = ds.isolates
     pop = x[
@@ -120,7 +119,7 @@ def test_policy_peak_golden(ds):
     assert st["counting_rule"] == "readme_period" and st["window_days"] == 364
     lo, hi = st["interval"]
     assert lo < st["rate"] < hi
-    assert "local_guide_alternative" not in st  # a line never names another drug (18 Oct decision)
+    assert "local_guide_alternative" not in st  # a line never names another drug
     # prior-year rate: the same rolling window ending 52 weeks earlier
     assert st["prior_as_of"] == "2025-06-22"
     assert (st["x_prior"], st["n_prior"]) == (122, 769) == tmp_women_primary_care(ds, "2025-06-22")
@@ -146,7 +145,7 @@ def test_policy_latest_and_crossed_on_runs(ds):
 
 
 def test_policy_resolved_item_shows_last_flagged_and_now(ds):
-    """Brief D5: the week after the line is crossed back, the item says what was flagged and what the rate is now."""
+    """The week after the line is crossed back, the item says what was flagged and what the rate is now."""
     (s,) = policy.detect(ds, "2026-07-05")
     assert s["status"] == "resolved" and s["advice"] is None
     assert s["text"] == (
@@ -189,7 +188,7 @@ def test_expert_rule_goldens(ds):
     assert c["esbl_ceph_s"] == {"checked": 517, "hits": 0}
     assert c["mrsa_fox_s"] == {"checked": 111, "hits": 0}
     # Re-pinned from 109 (two overlapping rules, E. coli and K. pneumoniae only): one merged check over every species
-    # with EUCAST cefuroxime breakpoints (brief D7, clinical D-L6). The 109 of 40_esbl_flag are all inside it.
+    # with EUCAST cefuroxime breakpoints. The 109 earlier hits are all inside it.
     _, cro = expert_rules.masks(ds.isolates, "cro_r_amp_or_cxm_s")
     assert c["cro_r_amp_or_cxm_s"]["hits"] == int(cro.sum()) == 139
     assert ds.isolates[cro].organism.value_counts().to_dict() == {
@@ -198,7 +197,7 @@ def test_expert_rule_goldens(ds):
         "Proteus mirabilis": 19,
         "Klebsiella oxytoca": 11,
     }
-    assert c["tzp_r_amp_s"]["hits"] == 276  # new rule (clinical D-L6; EUCAST Expert Rules v3.3 rule 1)
+    assert c["tzp_r_amp_s"]["hits"] == 276  # EUCAST Expert Rules v3.3 rule 1
     assert set(c) == {r["id"] for r in C.EXPERT_RULES}
 
 
@@ -213,7 +212,7 @@ def test_expert_rules_week(ds):
         assert rows.sample_date.max() <= end and rows.sample_date.min() > end - pd.Timedelta(days=7)
         assert s["ward"] is None  # lab-wide check, units listed in the text
         assert s["evidence"]["method"].startswith(C.EXPERT_RULES_LABEL)
-    assert len({s["evidence"]["params"]["rule_id"] for s in sigs}) == len(sigs)  # one item per rule (brief D7)
+    assert len({s["evidence"]["params"]["rule_id"] for s in sigs}) == len(sigs)  # one item per rule
 
 
 # ---------------------------------------------------------------- completeness
@@ -224,7 +223,7 @@ def test_completeness_phcs_gap(ds):
     assert s["ward"] == "PHC-S" and s["priority"] == "P2" and s["section"] == "data_quality"
     assert s["slots"]["expected"] == 51 and s["evidence"]["counts"]["cultures_this_week"] == 0
     assert s["evidence"]["filter"]["date_from"] == "2025-12-08" and s["evidence"]["filter"]["date_to"] == "2025-12-14"
-    # Re-pinned: a data gap says nothing about resistance, so the text no longer mentions it (audit #5)
+    # Re-pinned: a data gap says nothing about resistance, so the text no longer mentions it
     assert s["text"] == "Health centre South: no cultures this week (usually 51 a week). Data gap, cause unknown."
 
 
@@ -235,7 +234,7 @@ def test_completeness_only_gap_in_replay(ds):
 
 
 def test_completeness_resolved_item_shows_this_weeks_cultures(ds):
-    """Brief D5: the week after the gap PHC-S sent 48 cultures; the item says so instead of repeating 'no cultures'."""
+    """The week after the gap PHC-S sent 48 cultures; the item says so instead of repeating 'no cultures'."""
     (s,) = completeness.detect(ds, "2025-12-21")
     assert s["text"] == (
         "Health centre South: data gap. Resolved. Last flagged week ending 14 Dec 2025: 0 cultures (usually 51 a "
@@ -257,7 +256,7 @@ def test_resistance_change_demo_cells(ds):
     icu = [s for s in resistance_change.detect(ds, "2026-03-08") if s["ward"] == "ICU"]
     assert [(s["organism"], s["drug"]) for s in icu] == [("Staphylococcus aureus", "FOX")]
     assert icu[0]["slots"]["counts"] == [3, 8] and icu[0]["priority"] == "P2" and icu[0]["section"] == "changed"
-    # A positive cefoxitin screen is MRSA (clinical D-L7), and 3 of 8 is too few for a percentage (brief D3)
+    # A positive cefoxitin screen is MRSA, and 3 of 8 is too few for a percentage
     assert icu[0]["text"] == (
         "Intensive care unit · MRSA (cefoxitin screen positive): 3 of 8 S. aureus in the last 4 weeks vs 1 of 70 (1%) "
         "in the 52 weeks before. Changed; watch next week."
@@ -284,7 +283,7 @@ def test_resistance_change_cell_counts(ds):
 
 @pytest.mark.parametrize("as_of", ["2026-03-15", "2026-03-29", "2025-06-22"])
 def test_resistance_change_shows_no_percentage_below_ten(ds, as_of):
-    """Brief D3: below 10 isolates no percentage, 10 to 29 tagged "small n" (config.SMALL_N_NONE / SMALL_N_LOW)."""
+    """Below 10 isolates no percentage, 10 to 29 tagged "small n" (config.SMALL_N_NONE / SMALL_N_LOW)."""
     for s in resistance_change.detect(ds, as_of):
         if s["status"] == "resolved":
             continue
@@ -295,7 +294,7 @@ def test_resistance_change_shows_no_percentage_below_ten(ds, as_of):
 
 
 def test_resistance_change_resolved_item(ds):
-    """Brief D5: a cell flagged last week and not this week says so, with last week's and this week's counts."""
+    """A cell flagged last week and not this week says so, with last week's and this week's counts."""
     (s,) = [s for s in resistance_change.detect(ds, "2026-03-08") if s["status"] == "resolved"]
     assert s["text"] == (
         "Health centre South · Ceftriaxone resistant. Resolved. Last flagged week ending 1 Mar 2026: 3 of 9 K. "
@@ -305,7 +304,7 @@ def test_resistance_change_resolved_item(ds):
 
 
 def test_outlier_needs_enough_isolates_per_cell(ds):
-    """Brief D4: the ICU MRSA weeks no longer fire, because their third 'high' cell was P. mirabilis ciprofloxacin
+    """The ICU MRSA weeks no longer fire, because their third 'high' cell was P. mirabilis ciprofloxacin
     1 of 2 (8 and 15 Mar) or E. coli mecillinam 1 of 1 (29 Mar). Two cells of one clone (cefoxitin and clindamycin
     on the same S. aureus isolates) are not three results above range."""
     for as_of in ["2026-03-08", "2026-03-15", "2026-03-29"]:
@@ -322,7 +321,7 @@ def test_outlier_needs_enough_isolates_per_cell(ds):
 
 
 def test_outlier_names_each_cell_and_lists_its_isolates(ds):
-    """Brief D4 and D8: every high cell is named with its count, and the case file lists only those cells' isolates."""
+    """Every high cell is named with its count, and the case file lists only those cells' isolates."""
     (s,) = outlier.detect(ds, "2025-06-15")
     assert s["ward"] == "URO" and s["priority"] == "P3" and s["section"] == "changed"
     assert s["text"] == (
@@ -341,7 +340,7 @@ def test_outlier_templates_cover_every_pair():
 
 
 def test_cefoxitin_reads_as_mrsa(ds):
-    """Clinical D-L7: a positive cefoxitin screen is MRSA, in the change item, its title and an outlier's cell name."""
+    """A positive cefoxitin screen is MRSA, in the change item, its title and an outlier's cell name."""
     assert resistance_change.finding("Staphylococcus aureus", "FOX") == "MRSA (cefoxitin screen positive)"
     assert resistance_change.subject("Staphylococcus aureus", "FOX") == "MRSA among S. aureus"
     assert resistance_change.subject("Escherichia coli", "TMP") == "E. coli resistant to trimethoprim"
@@ -417,11 +416,11 @@ def test_registry_lists_all_detectors():
         "expert_rules",
         "completeness",
     ]
-    for name in ["resistance_change", "outlier", "policy", "expert_rules", "completeness"]:
-        assert registry.load(name) is not None
+    assert registry.WINDOWED <= set(registry.DETECTORS)
 
 
-def test_registry_skips_missing_and_failing(ds, monkeypatch, caplog):
+def test_a_failing_detector_raises(ds, monkeypatch):
+    """No quiet-looking brief with a detector missing: the error reaches the API and the UI's error state."""
     broken = types.ModuleType("aei.detectors.zz_broken")
 
     def detect(ds, as_of, rule="readme_period"):
@@ -429,23 +428,20 @@ def test_registry_skips_missing_and_failing(ds, monkeypatch, caplog):
 
     broken.detect = detect
     monkeypatch.setitem(sys.modules, "aei.detectors.zz_broken", broken)
-    with caplog.at_level(logging.WARNING, logger="aei.detectors"):
-        sigs, rep = registry.run(ds, "2026-06-21", names=["zz_missing", "zz_broken", "policy"])
-    assert rep["ran"] == ["policy"] and len(sigs) == 1
-    assert {s["name"] for s in rep["skipped"]} == {"zz_missing", "zz_broken"}
-    assert any("zz_missing" in r.getMessage() for r in caplog.records)
-    assert any("zz_broken" in r.getMessage() for r in caplog.records)
+    with pytest.raises(RuntimeError, match="boom"):
+        registry.run(ds, "2026-06-21", names=["policy", "zz_broken"])
 
 
-def test_registry_passes_optional_kwargs(ds, monkeypatch):
+def test_registry_passes_the_window_to_windowed_detectors(ds, monkeypatch):
     seen = {}
-    mod = types.ModuleType("aei.detectors.zz_kwargs")
+    mod = types.ModuleType("aei.detectors.zz_window")
 
-    def detect(ds, as_of, rule="readme_period", window="4w", signals=None):
-        seen.update(rule=rule, window=window, n=len(signals))
+    def detect(ds, as_of, rule="readme_period", window="4w"):
+        seen.update(rule=rule, window=window)
         return []
 
     mod.detect = detect
-    monkeypatch.setitem(sys.modules, "aei.detectors.zz_kwargs", mod)
-    registry.run(ds, "2026-06-21", rule="30d", window="4m", names=["policy", "zz_kwargs"])
-    assert seen == {"rule": "30d", "window": "4m", "n": 1}
+    monkeypatch.setitem(sys.modules, "aei.detectors.zz_window", mod)
+    monkeypatch.setattr(registry, "WINDOWED", {"zz_window"})
+    registry.run(ds, "2026-06-21", rule="30d", window="4m", names=["zz_window"])
+    assert seen == {"rule": "30d", "window": "4m"}

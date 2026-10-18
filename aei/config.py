@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-APP_NAME = "Strainwatch"  # placeholder; the team decides the final name
+APP_NAME = "Strainwatch"
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -30,13 +30,7 @@ def env(name: str, default: str | None = None) -> str | None:
     return default if v is None or v.strip() == "" else v.strip()
 
 
-_DATASET = Path("data") / "synthetic_microbiology_dataset"
-_DEV_DATA_CANDIDATES = [
-    ROOT.parent / "jx26-tyks-context" / _DATASET,  # context repo cloned next to this one
-    ROOT.parent.parent / "context" / _DATASET,  # the original hackathon folder layout
-]
-_DEV_DATA = next((p for p in _DEV_DATA_CANDIDATES if p.is_dir()), None)
-DATA_DIR = Path(env("AEI_DATA_DIR") or _DEV_DATA or ROOT / "data")
+DATA_DIR = Path(env("AEI_DATA_DIR") or ROOT / "data")  # the challenge's 6 synthetic CSVs
 CACHE_DIR = Path(env("AEI_CACHE_DIR") or ROOT / ".cache")
 
 DATA_START = "2023-10-02"  # Monday of ISO 2023-W40
@@ -148,8 +142,8 @@ NO_BREAKPOINT = {
     "Citrobacter freundii": {"CXM"},
 }
 
-# Policy lines set by infection control. A line flags the drug it is about and never names another one (the 18 Oct
-# decision after Mylab's feedback: the doctor chooses).
+# Policy lines set by infection control. A line flags the drug it is about and never names another one: the
+# doctor chooses.
 POLICY_LINES = [
     {
         "id": "tmp_uti_women_20",
@@ -278,7 +272,7 @@ KEEP_REASONS = ["Discussed with infectious diseases", "Patient-specific reason",
 
 # Demo seeds: infection-control-approved alerts. `profile` is the flagged antibiogram and `marker` its resistance
 # marker; `resistant_to` is what that antibiogram is R to: its reported R plus what the marker implies (MRSA: every
-# beta-lactam). The alert applies to exactly those drugs (`drugs`) and to the orders for `indications`: an E. coli
+# beta-lactam). A message names no drug: it is shown on the doctor's order screen. The alert applies to exactly those drugs (`drugs`) and to the orders for `indications`: an E. coli
 # urinary cluster also matters for urosepsis, and the ICU MRSA isolates are blood and wound. A message dates its own
 # counts (sampled 3 to 8 Mar), so it stays true when the cluster grows after the approval. Messages and antibiograms are
 # checked against the raw data in tests/test_against_source.py.
@@ -299,9 +293,8 @@ DEMO_ALERT_SEEDS = [
         "expires_on": "2025-06-23",
         "approved_by_role": "Infection control",
         "message": (
-            "Possible ESBL E. coli cluster, URO: 6 patients sampled 30 May to 8 Jun with one antibiogram (ampicillin, "
-            "cefuroxime, ceftriaxone, ciprofloxacin and trimethoprim R). Usually about 1 ESBL E. coli patient a month. "
-            "Under investigation."
+            "Possible ESBL E. coli cluster, URO: 6 patients sampled 30 May to 8 Jun with one antibiogram. Usually about "
+            "1 ESBL E. coli patient a month. Under investigation."
         ),
     },
     {
@@ -318,8 +311,8 @@ DEMO_ALERT_SEEDS = [
         "expires_on": "2026-03-23",
         "approved_by_role": "Infection control",
         "message": (
-            "Unusual MRSA pattern, ICU: 3 patients sampled 3 to 8 Mar with one antibiogram (cefoxitin R, clindamycin "
-            "R, vancomycin S). None of the beta-lactams on this panel cover MRSA. Under investigation; typing advised."
+            "Unusual MRSA pattern, ICU: 3 patients sampled 3 to 8 Mar with one antibiogram. MRSA is resistant to every "
+            "beta-lactam on this panel. Under investigation; typing advised."
         ),
     },
 ]
@@ -377,7 +370,7 @@ DEMO_SCENARIOS = [
     },
 ]
 
-# Guided tour for judges: the replay starts just before the ICU cluster
+# Guided tour: the replay starts just before the ICU cluster
 TOUR_START_AS_OF = "2026-03-01"
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -388,5 +381,5 @@ DAILY_SPEND_USD = float(env("AEI_DAILY_SPEND_USD", "20"))
 RATE_LIMIT_PER_MIN = int(env("AEI_RATE_LIMIT_PER_MIN", "120"))  # all API requests per IP
 LLM_RATE_LIMIT_PER_MIN = int(env("AEI_LLM_RATE_LIMIT_PER_MIN", "6"))  # live model calls per IP
 LLM_RATE_LIMIT_PER_DAY = int(env("AEI_LLM_RATE_LIMIT_PER_DAY", "60"))
-SESSION_HEADER = "X-Demo-Session"  # random id from the browser; scopes judges' approvals and order feedback
+SESSION_HEADER = "X-Demo-Session"  # random id from the browser; scopes each visitor's approvals and order feedback
 MAX_WRITES_PER_SESSION = int(env("AEI_MAX_WRITES_PER_SESSION", "200"))

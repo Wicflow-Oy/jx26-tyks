@@ -1,4 +1,4 @@
-"""Data completeness: units that sent no (or impossibly few) cultures this week (ported from 35_data_gaps).
+"""Data completeness: units that sent no (or impossibly few) cultures this week.
 
 For each unit, the week is the 7 days ending `as_of`; "usual" is the mean weekly culture count over the 56 days before
 the week (8 weeks; at least 28 days of history). A unit is flagged when it sent no cultures while usually >= 5 a week,
@@ -20,7 +20,7 @@ MIN_HISTORY_DAYS = 28
 SILENT_MIN_EXPECTED = 5.0
 LOW_P = 1e-6
 GAP_STATES = ("silent", "low")
-METHOD = "culture volume this week vs the unit's previous 8 weeks (Poisson lower tail; 35_data_gaps)"
+METHOD = "culture volume this week vs the unit's previous 8 weeks (Poisson lower tail)"
 
 
 def unit_volumes(ds, as_of) -> pd.DataFrame:

@@ -4,10 +4,10 @@ order screen and CDS Hooks, write and rate limits, and the public-demo headers."
 import pytest
 from fastapi.testclient import TestClient
 
-from aei import api, brief, cds, cds_hooks, data, precompute, store, views
+from aei import api, brief, cds, cds_hooks, data, i18n, precompute, store, views
 from aei import config as C
 
-A, B = "judge-aaaa-0001", "judge-bbbb-0002"
+A, B = "visitor-aaaa-0001", "visitor-bbbb-0002"
 ICU_CLUSTER = "phe-7972cb3f12"  # ICU MRSA 2026, pattern FOX:R VAN:S CLI:R, first sample 3 Mar 2026
 URO_CLUSTER = "phe-d06c1ec1c5"  # URO ESBL E. coli 2025, first sample 30 May 2025
 AS_B = {C.SESSION_HEADER: B}
@@ -25,7 +25,7 @@ def cache_dir(tmp_path_factory, ds):
 def client(cache_dir, tmp_path, monkeypatch):
     monkeypatch.setattr(C, "STATE_DB", tmp_path / "state.sqlite")
     monkeypatch.setattr(C, "PUBLIC", False)  # the template narrator: no key, no replay cache
-    for name in ("AEI_NARRATOR", "ANTHROPIC_API_KEY", "JEV_API_KEY"):
+    for name in ("AEI_NARRATOR", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     api.LIMITER.hits.clear()
     with TestClient(api.app, headers={C.SESSION_HEADER: A}) as c:
@@ -58,7 +58,7 @@ def test_meta(client):
     m = client.get("/api/meta").json()
     assert m["app_name"] == C.APP_NAME and m["synthetic"] is True
     assert m["replay"] == {"first": "2024-10-27", "last": C.DATA_END}
-    assert m["demo_mondays"] == C.DEMO_MONDAYS and m["second_opinion"] == "not_configured"
+    assert m["demo_mondays"] == C.DEMO_MONDAYS
     assert {w["code"] for w in m["wards"]} == set(C.WARD_LABELS) and m["narrator"] == "template"
     assert m["tour_start_as_of"] == C.TOUR_START_AS_OF and [i["key"] for i in m["indications"]] == list(C.INDICATIONS)
     assert m["cds_hooks"]["discovery"] == "/cds-services" and "no EHR is connected" in m["cds_hooks"]["note"]
@@ -109,8 +109,8 @@ def test_no_cors(client):
 
 def test_rate_limit_per_forwarded_ip(client, monkeypatch):
     monkeypatch.setattr(C, "RATE_LIMIT_PER_MIN", 2)
-    judge = {"X-Forwarded-For": "198.51.100.7, 203.0.113.9"}  # the proxy appended the last entry
-    assert [client.get("/api/meta", headers=judge).status_code for _ in range(2)] == [200, 200]
+    viewer = {"X-Forwarded-For": "198.51.100.7, 203.0.113.9"}  # the proxy appended the last entry
+    assert [client.get("/api/meta", headers=viewer).status_code for _ in range(2)] == [200, 200]
     r = client.get("/api/meta", headers={"X-Forwarded-For": "203.0.113.9"})
     assert r.status_code == 429 and r.json()["error"] == "rate_limited" and r.headers["x-robots-tag"]
     assert client.get("/api/meta", headers={"X-Forwarded-For": "203.0.113.10"}).status_code == 200
@@ -130,11 +130,14 @@ def test_an_unexpected_error_is_a_plain_json_500(client, monkeypatch):
 
 def test_request_bodies_are_capped(client):
     json_type = {"Content-Type": "application/json"}
-    big = client.post("/api/validate", content=b'{"text": "' + b"x" * api.MAX_BODY_BYTES + b'"}', headers=json_type)
+    big = client.post(
+        "/api/order-feedback", content=b'{"card_key": "' + b"x" * api.MAX_BODY_BYTES + b'"}', headers=json_type
+    )
     assert big.status_code == 413 and big.json()["error"] == "too_large" and big.headers["x-robots-tag"]
-    chunked = client.post("/api/validate", content=iter([b'{"text": "x"}']), headers=json_type)
+    chunked = client.post("/api/order-feedback", content=iter([b'{"card_key": "x"}']), headers=json_type)
     assert chunked.status_code == 413  # no declared length
-    assert client.post("/api/validate", json={"text": "x"}).status_code == 200
+    small = {"as_of": "2026-03-15", "card_key": "card-1", "state": "info", "outcome": "shown"}
+    assert client.post("/api/order-feedback", json=small).status_code == 200
 
 
 def test_bad_session_header(client):
@@ -180,7 +183,7 @@ def test_bad_as_of_is_a_clear_400(client, query, message):
     assert r.status_code == 400 and message in r.json()["message"]
 
 
-# --------------------------------------------------------------------------- brief, replay, case file, feed
+# --------------------------------------------------------------------------- brief, replay, case file
 def test_brief_has_the_icu_mrsa_p1(client):
     b = client.get("/api/brief?as_of=2026-03-29").json()
     assert b["as_of"] == "2026-03-29" and b["monday"] == "2026-03-30" and b["counts"]["P1"] == 1
@@ -212,11 +215,11 @@ def test_my_ward_shows_the_trimethoprim_line_on_urine_views_only(client):
         return [b["id"] for b in view["banners"]]
 
     assert banners("urine") == ["tmp_uti_women_20"]
-    assert banners("blood_wound") == banners("wound") == []  # the line is about urinary E. coli (my-ward #3)
+    assert banners("blood_wound") == banners("wound") == []  # the line is about urinary E. coli
 
 
 def test_my_ward_never_names_another_drug(client):
-    """Re-verification #1, the 18 Oct decision: the trimethoprim line flags trimethoprim and names no alternative."""
+    """The trimethoprim line flags trimethoprim and names no alternative."""
     for lang in ("en", "fi"):
         view = client.get(f"/api/my-ward?as_of=2026-06-21&ward=PHC-N&specimen=urine&lang={lang}").json()
         [line] = [s for s in view["signals"] if s["kind"] == "policy_line"]
@@ -256,13 +259,6 @@ def test_case_file(client):
 
 def test_case_file_is_strictly_as_of(client):
     assert client.get(f"/api/signals/{ICU_CLUSTER}?as_of=2026-03-01").status_code == 404  # first sample 3 Mar
-
-
-def test_feed_counts_by_unit(client):
-    f = client.get("/api/feed?as_of=2026-03-15").json()
-    assert (f["from"], f["to"], f["refreshed"]) == ("2026-03-09", "2026-03-15", "nightly")
-    assert [u["ward"] for u in f["units"]] == list(C.WARD_LABELS)
-    assert f["totals"]["isolates"] == sum(u["isolates"] for u in f["units"]) > 0
 
 
 # --------------------------------------------------------------------------- alerts and heads-ups per session
@@ -374,19 +370,6 @@ def test_write_cap_is_a_friendly_429(client, monkeypatch):
     assert other.status_code == 201 and other.json()["wards"] == ["ICU"]  # per session; wards default to the signal's
 
 
-def test_narrate_and_validate(client):
-    n = client.post("/api/narrate", json={"signal_id": ICU_CLUSTER, "as_of": "2026-03-29"}).json()
-    assert n["provider"] == "template" and n["validated"] is True and n["text"]
-    bad = client.post("/api/validate", json={"text": "13 patients, {n} share it", "slots": {"n": 12}}).json()
-    assert bad["ok"] is False
-    good = client.post("/api/validate", json={"text": "12 of 13", "slots": {"x": [12, 13]}, "mode": "rendered"})
-    assert good.json()["ok"] is True
-
-
-def test_second_opinion_is_not_configured(client):
-    assert client.get(f"/api/second-opinion/{ICU_CLUSTER}?as_of=2026-03-29").json() == {"status": "not_configured"}
-
-
 # --------------------------------------------------------------------------- the doctor's order view
 @pytest.mark.parametrize("key", list(SCENARIOS))
 def test_order_context_for_each_demo_scenario(client, key):
@@ -419,6 +402,13 @@ def test_bad_orders_and_unknown_patients(client):
     assert all(r["date"] <= "2026-03-15" for r in h["previous_results"])
 
 
+def test_a_keep_reason_shown_in_finnish_is_accepted(client):
+    keep = {"as_of": "2026-03-15", "card_key": "card-fi", "state": "warning", "outcome": "keep"}
+    reason = i18n.label(C.KEEP_REASONS[0], "fi")
+    assert reason != C.KEEP_REASONS[0]
+    assert client.post("/api/order-feedback", json={**keep, "reason": reason}).json()["logged"] is True
+
+
 def test_order_feedback_summary(client):
     shown = {"as_of": "2026-03-15", "card_key": "card-1", "source_id": "own_history", "state": "warning"}
     assert client.post("/api/order-feedback", json={**shown, "outcome": "shown"}).json()["logged"] is True
@@ -427,7 +417,6 @@ def test_order_feedback_summary(client):
     client.post("/api/order-feedback", json={**shown, "outcome": "change", "changed_to": "NIT"})
     summary = client.get("/api/order-feedback/summary?as_of=2026-03-15").json()
     assert summary[0]["text"] == "shown 1 time, changed 1" and summary[0]["edited"] == 1
-    assert client.get("/api/feedback?as_of=2026-03-15").json() == summary
     assert client.get("/api/order-feedback/summary?as_of=2026-03-15", headers=AS_B).json() == []
 
 
@@ -466,7 +455,7 @@ def test_cds_discovery_and_an_order_sign_warning(client):
     cards = client.post(f"/cds-services/{services['order-sign']}", json=hook_request("order-sign")).json()["cards"]
     assert [c["indicator"] for c in cards] == ["warning"]
     assert all(link["url"].startswith("http://testserver/") for link in cards[0]["links"])
-    assert [link["label"] for link in cards[0]["links"]] == [cds.DETAILS_LABEL]  # no SMART launch (audit #11)
+    assert [link["label"] for link in cards[0]["links"]] == [cds.DETAILS_LABEL]  # no SMART launch
     assert "suggestions" not in cards[0]  # the card never names another drug
     select = client.post(f"/cds-services/{services['order-select']}", json=hook_request("order-select")).json()
     assert [c["indicator"] for c in select["cards"]] == ["info"]
@@ -502,9 +491,8 @@ def test_cds_without_a_session_is_logged_but_changes_nothing(client):
     assert anon.post(f"/cds-services/{sign}/feedback", json=feedback).json() == {"logged": 1}
     [logged] = store.feedback_summary(store.ANONYMOUS, "2025-06-15")
     assert (logged["shown"], logged["kept"]) == (1, 1)
-    assert (
-        anon.get("/api/feedback?as_of=2025-06-15").json() == client.get("/api/feedback?as_of=2025-06-15").json() == []
-    )
+    summary = "/api/order-feedback/summary?as_of=2025-06-15"
+    assert anon.get(summary).json() == client.get(summary).json() == []
     again = anon.post(f"/cds-services/{sign}", json=hook_request("order-sign", "uro-esbl")).json()["cards"]
     assert [c["indicator"] for c in again] == ["warning"]
 
@@ -517,8 +505,8 @@ def test_cds_errors(client):
     listed = hook_request("order-sign")
     listed["context"]["patientId"] = ["P000001", "P000002"]
     r = client.post(f"/cds-services/{sign}", json=listed)
-    assert r.status_code == 422 and "Lengths" not in r.text  # was pandas' message (audit #10)
-    for reason in ("keep", ["keep"]):  # a reason must be a Coding object; both were a 500 (audit #1)
+    assert r.status_code == 422 and "Lengths" not in r.text  # was pandas' message
+    for reason in ("keep", ["keep"]):  # a reason must be a Coding object; both were a 500
         item = {"card": "abc", "outcome": "overridden", "overrideReason": {"reason": reason}}
         r = client.post(f"/cds-services/{sign}/feedback", json={"feedback": [item]})
         assert r.status_code == 422 and r.json()["error"] == "invalid_request" and r.headers["x-robots-tag"]

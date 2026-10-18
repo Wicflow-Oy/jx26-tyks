@@ -1,8 +1,8 @@
 """Demo state in SQLite (`config.STATE_DB`): approved alerts, heads-up drafts, CDS Hooks feedback, order-card feedback
-and an append-only audit log. CONTRACTS.md sections 7, 7b and 10.
+and an append-only audit log. CONTRACTS.md sections 7, 7b and 9.
 
 Sessions: the browser sends a random `X-Demo-Session` id. Reads return that session's rows plus the demo seeds, which
-every session sees, so judges never see each other's clicks; a reader without the header (session None) sees the seeds
+every session sees, so visitors never see each other's clicks; a reader without the header (session None) sees the seeds
 only. Alerts, revocations and heads-ups need a browser session. CDS Hooks clients send no header: their shown cards
 and feedback are appended under `ANONYMOUS`, which can never approve or revoke anything. Every write also appends one
 audit row, which makes the audit log the per-session write counter behind `MAX_WRITES_PER_SESSION`.
@@ -224,8 +224,11 @@ def _insert_alert(con, alert: dict) -> bool:
 
 
 def seed_demo() -> None:
-    """Insert `config.DEMO_ALERT_SEEDS` if missing (idempotent). Seeds belong to no session; every session sees them."""
+    """Write `config.DEMO_ALERT_SEEDS` (idempotent), replacing stored copies so the seeds always match the config.
+    Seeds belong to no session; every session sees them. Revocations are kept: they live in their own table."""
     with _transaction() as con:
+        con.execute("DELETE FROM alerts WHERE seed = 1")
+        known = {row[0] for row in con.execute("SELECT ref FROM audit WHERE event = 'alert_seeded'")}
         for s in C.DEMO_ALERT_SEEDS:
             seed = s | {
                 "session": SEED,
@@ -238,7 +241,8 @@ def seed_demo() -> None:
                 "indications": _indications(s["indications"]),
                 "approved_by_role": _approver(s["approved_by_role"]),
             }
-            if _insert_alert(con, seed):
+            _insert_alert(con, seed)
+            if s["id"] not in known:
                 _write(con, SEED, "alert_seeded", s["id"])
 
 

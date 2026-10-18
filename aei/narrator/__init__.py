@@ -1,4 +1,4 @@
-"""Narration: a model writes number-free skeletons; code renders and validates them (CONTRACTS.md sections 6, 10).
+"""Narration: a model writes number-free skeletons; code renders and validates them (CONTRACTS.md sections 6, 9).
 
 `get_narrator()` picks one by env AEI_NARRATOR:
 - template: the fixed English templates. The default outside public mode.

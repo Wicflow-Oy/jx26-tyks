@@ -1,10 +1,10 @@
-"""Resistance change on a ward: organism x drug, last 4 weeks vs the unit's own prior 52 weeks (ported from 39_resistance_hybrid).
+"""Resistance change on a ward: organism x drug, last 4 weeks vs the unit's own prior 52 weeks.
 
-Cells are the 39/44/48 organism-drug pairs on each ward. Counts are resistant of tested, deduplicated with the counting
-`rule` separately inside the window and inside the prior period (39 used first_30d over all rows). The prior rate is the
+Cells are the organism-drug pairs in PAIRS on each ward. Counts are resistant of tested, deduplicated with the counting
+`rule` separately inside the window and inside the prior period. The prior rate is the
 unit's prior 52 weeks pooled toward the hospital-wide rate over the same weeks (`stats.change_test`, m = 10, strength
 capped at 200); "changed" when the beta-binomial tail probability p < config.CHANGE_ALPHA. Strictly as-of.
-Brief gate (B2 addition, not in 39): a brief item also needs >= MIN_RESISTANT resistant isolates in the window, so
+Brief gate: a brief item also needs >= MIN_RESISTANT resistant isolates in the window, so
 "2 of 2" cells stay on the antibiogram chip and off the brief. A count prints no percentage below 10 isolates and is
 tagged "small n" below 30 (stats.n_state). In the week after a cell stops being flagged it is listed as resolved.
 """
@@ -29,10 +29,7 @@ PAIRS = (
 )
 PRIOR_DAYS = C.WINDOWS["12m"]  # the unit's prior 52 weeks
 MIN_RESISTANT = 3
-METHOD = (
-    "beta-binomial tail-probability test: last window vs the unit's prior 52 weeks pooled toward the hospital rate "
-    "(39_resistance_hybrid)"
-)
+METHOD = "beta-binomial tail-probability test: last window vs the unit's prior 52 weeks pooled toward the hospital rate"
 
 _COLS = ["isolate_id", "patient_id", "organism", "specimen", "sample_date", "ward_code", "first_30d"]
 _CACHE: "OrderedDict[tuple, pd.DataFrame]" = OrderedDict()

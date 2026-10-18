@@ -73,8 +73,8 @@ FI = {
         "text": (
             "{ward}, {organism_label}: {n_patients:int} potilasta {first_date:short_date} "
             "alkaen; tavallisesti {usual_low:int}–{usual_high:int} samassa ajassa. Herkkyysprofiilit "
-            "vaihtelevat: {n_profiles:int} eri profiilia, sääntöjemme mukaan alempi prioriteetti "
-            "(todellinen tilanne tuntematon). " + _THL_CHECK
+            "vaihtelevat: {n_profiles:int} eri profiilia, joten tärkeysjärjestyksessä "
+            "yhteisen profiilin ryppään alapuolella. " + _THL_CHECK
         ),
         "title": "{ward}, {organism_label}: potilaita tavallista enemmän",
     },
@@ -226,7 +226,7 @@ FI = {
     "cds_alert_summary_r": {"text": "{title}, {unit}: hälytyksen herkkyysprofiilissa {drug} R"},
     "cds_alert_summary_applies": {"text": "{title}, {unit}: hälytys koskee tätä lääkettä ({drug})"},
     "cds_alert_text": {
-        "text": "{message} Nostanut esiin: {role}, {approved_on:date}; voimassa {expires_on:short_date} asti."
+        "text": "Nostanut esiin {approved_on:date}: {role}. {message} Voimassa {expires_on:short_date} asti."
     },
     "cds_notice_drug": {"text": "{title}, {unit}. Hälytys ei koske tätä lääkettä ({drug})."},
     "cds_notice_indications": {"text": "{title}, {unit}. Hälytys koskee vain indikaatioita: {indications}."},
@@ -456,7 +456,7 @@ def _seen_title(same: str, k: int) -> str:
 
 for _s, _st in _SAME.items():
     for _k in range(len(C.WARD_LABELS)):
-        for _e, _bt in _background("Ennen tätä rypästä tämä herkkyysprofiili oli").items():
+        for _e, _bt in _background("Kaikessa datassa ennen tätä rypästä tämä herkkyysprofiili oli").items():
             FI[f"ob_seen_before__{_s}__{_k}__{_e}"] = {
                 "text": (
                     "{ward}, {organism_label}, herkkyysprofiili ({pattern}): "

@@ -84,7 +84,7 @@ def _shown(cell) -> str:
 
 def test_icu_march_numbers(icu):
     # README rule (product default). The 4-week MRSA influx: 13 of 20 S. aureus are MRSA. Re-pinned from MEM 74 [61-85]
-    # and TZP 73 [60-84]: E. faecalis meropenem has no EUCAST breakpoint, and the Jeffreys floor (my-ward #1).
+    # and TZP 73 [60-84]: E. faecalis meropenem has no EUCAST breakpoint, and the Jeffreys floor.
     for drug, (shown, covered) in {
         "MEM": ("72% [58–83]", 11),
         "TZP": ("72% [59–83]", 11),
@@ -132,8 +132,11 @@ def test_uro_june_2025(ds):
         "FOX": "screening_only",
         "CLI": "not_for_urine",
         "VAN": "not_for_urine",
-    }  # clinical D-L12
-    # the prior 52 weeks of the 12-month window would start in Jul 2023, before the data does (my-ward #6)
+        **{
+            combo: "not_for_urine" for combo in ("CRO+VAN", "TZP+VAN", "MEM+VAN")
+        },  # with vancomycin: not for urine either
+    }
+    # the prior 52 weeks of the 12-month window would start in Jul 2023, before the data does
     assert all(r["cells"]["12m"]["changed"] is None for r in out["rows"])
 
 
@@ -200,11 +203,11 @@ def test_strictly_as_of(ds):
     )
 
 
-def test_rule_switch_reproduces_36b_counts(ds):
-    """CONTRACTS 4.1 goldens through the view under 36b's own counting rule ("30d")."""
+def test_rule_switch_reproduces_the_30d_counts(ds):
+    """CONTRACTS 4.1 goldens through the view under the 30-day counting rule ("30d")."""
     icu = views.my_ward(ds, "2026-03-29", ward="ICU", specimen_group="blood_wound", rule="30d")
     assert icu["filters"]["rule"] == "30d" and icu["windows"][0]["n_isolates"] == 24
-    # re-pinned from 36b's printed MEM 74 [61-85], TZP 73 [60-84], VAN 78 [62-91]; see test_coverage.GOLDEN for why
+    # re-pinned from the original analysis's printed MEM 74 [61-85], TZP 73 [60-84], VAN 78 [62-91]; see test_coverage.GOLDEN for why
     for drug, (shown, covered) in {
         "MEM": ("72% [58–83]", 11),
         "TZP": ("72% [59–83]", 11),
@@ -227,7 +230,7 @@ def test_rule_switch_reproduces_36b_counts(ds):
 
 
 def test_rows_with_only_species_rules_are_not_shown(ds):
-    """my-ward #2: a row whose every result is EUCAST's species-level R ("0 of 957 covered") is hidden with the reason."""
+    """A row whose every result is EUCAST's species-level R ("0 of 957 covered") is hidden with the reason."""
     sa = views.my_ward(ds, "2026-03-29", ward="ICU", specimen_group="blood_wound", organism="Staphylococcus aureus")
     caz = next(n for n in sa["not_shown"] if n["drug"] == "CAZ")
     assert caz["code"] == "expected_resistant"
@@ -243,7 +246,7 @@ def test_rows_with_only_species_rules_are_not_shown(ds):
     assert not {"CLI", "VAN"} & {r["drug"] for r in men["rows"]}
     caz = next(n for n in men["not_shown"] if n["drug"] == "CAZ")  # untested: not a species rule
     assert caz["code"] == "not_tested_enough"
-    assert caz["reason"] == "Ceftazidime not shown: untested on E. coli (all of this unit's isolates)"  # my-ward #7
+    assert caz["reason"] == "Ceftazidime not shown: untested on E. coli (all of this unit's isolates)"
 
 
 def test_an_untested_share_rounds_half_up_from_the_counts(ds):
@@ -254,7 +257,7 @@ def test_an_untested_share_rounds_half_up_from_the_counts(ds):
 
 
 def test_stabilised_interval_in_view_does_not_collapse(ds):
-    """my-ward #1: URO men E. coli meropenem 11 of 11 printed "100 [100-100]"."""
+    """URO men E. coli meropenem 11 of 11 printed "100 [100-100]"."""
     men = views.my_ward(ds, "2026-09-27", ward="URO", specimen_group="urine", organism="Escherichia coli", sex="M")
     mem = _cell(men, "MEM")
     assert (mem["observed"]["covered"], mem["observed"]["tested"], mem["state"]) == (11, 11, "low_n")
@@ -262,14 +265,14 @@ def test_stabilised_interval_in_view_does_not_collapse(ds):
 
 
 def test_no_change_claimed_without_a_percentage(ds):
-    """my-ward #4: ICU blood, 4 weeks to 29 Mar 2026: MEM 4 of 9 used to say "changed down"."""
+    """ICU blood, 4 weeks to 29 Mar 2026: MEM 4 of 9 used to say "changed down"."""
     out = views.my_ward(ds, "2026-03-29", ward="ICU", specimen_group="blood")
     small = [r["cells"]["4w"] for r in out["rows"] if r["cells"]["4w"]["state"] == "not_enough_data"]
     assert small and all(c["changed"] is None for c in small)
 
 
 def test_footer_names_the_scope(ds, icu):
-    """my-ward #9: "on this unit" only when one unit is selected."""
+    """The "on this unit" wording only when one unit is selected."""
     assert icu["footer"] == "In-vitro coverage on this unit. Not a prescription; local guide first."
     several = views.my_ward(ds, "2026-06-21", ward=PHC, specimen_group="urine")
     assert several["footer"] == "In-vitro coverage on the selected units. Not a prescription; local guide first."
@@ -284,12 +287,12 @@ def test_filters_catalog(ds):
     setting = {w["code"]: w["setting"] for w in fc["wards"]}
     assert setting["ED"] == "outpatient" and setting["PHC-N"] == "outpatient" and setting["ICU"] == "inpatient"
     assert [s["key"] for s in fc["specimen_groups"]] == list(C.SPECIMEN_GROUPS)
-    # re-pinned: no counts and no order by count, which came from the whole dataset, after any replay date (audit #8)
+    # re-pinned: no counts and no order by count, which came from the whole dataset, after any replay date
     assert [o["organism"] for o in fc["organisms"]] == sorted(ds.isolates.organism.unique()) and len(
         fc["organisms"]
     ) == 9
     assert all(set(o) == {"organism", "label"} for o in fc["organisms"]) and all("n" not in h for h in fc["home_areas"])
-    assert [w["label"] for w in fc["windows"]] == ["Last 4 weeks", "Last 16 weeks", "Last 52 weeks"]  # my-ward #8
+    assert [w["label"] for w in fc["windows"]] == ["Last 4 weeks", "Last 16 weeks", "Last 52 weeks"]
     assert [s["code"] for s in fc["sexes"]] == ["F", "M"] and [a["key"] for a in fc["age_bands"]] == [
         "0-17",
         "18-64",

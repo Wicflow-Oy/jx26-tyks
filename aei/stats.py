@@ -24,7 +24,7 @@ def n_state(n: int) -> str:
 
 
 def prior_rate(x_prior: int, n_prior: int, x_hosp: int, n_hosp: int, m: float = 10) -> float:
-    """Unit-level prior rate for the 52 weeks before the window, shrunk toward the hospital-wide rate (39_resistance_hybrid)."""
+    """Unit-level prior rate for the 52 weeks before the window, shrunk toward the hospital-wide rate."""
     ph = (x_hosp + 0.5) / (n_hosp + 1)
     return (x_prior + m * ph) / (n_prior + m)
 
@@ -43,7 +43,7 @@ def change_test(
 
     Counts are of the event being monitored (resistant isolates for resistance, NOT-covered for coverage), so
     direction="up" asks "more events than expected". Returns {"p": float, "changed": bool, "prior": float,
-    "expected": float}. The prior's strength is capped at 200 pseudo-isolates (39_resistance_hybrid)."""
+    "expected": float}. The prior's strength is capped at 200 pseudo-isolates."""
     prior = prior_rate(x_prior, n_prior, x_hosp, n_hosp)
     if n_w <= 0:
         return {"p": 1.0, "changed": False, "prior": prior, "expected": 0.0}

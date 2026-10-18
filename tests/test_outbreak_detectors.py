@@ -1,5 +1,5 @@
 """Outbreak detectors (phenotype, thl, stepup, seen_before). Offline and deterministic.
-Goldens from CONTRACTS.md section 5.2 and analysis 09_leadtime, 08_hidden, 47_outbreak_prob, 52_seen_before_expert_rules."""
+Goldens from CONTRACTS.md section 5.2."""
 
 import json
 import re
@@ -60,7 +60,7 @@ def check_signal(s: dict) -> None:
     for word in BANNED:
         assert word not in shown, (word, shown)
     check_title(registry.with_title(s))
-    if s["status"] == "resolved":  # brief D5: what was last flagged, not last week's present tense
+    if s["status"] == "resolved":  # what was last flagged, not last week's present tense
         assert s["template_id"].endswith("_resolved") and "Resolved. Last flagged week ending" in s["text"]
         assert s["advice"] is None
 
@@ -142,7 +142,7 @@ def unit_patients_with_pattern(ds, ward, organism, pattern, first) -> int:
 
 
 def test_phenotype_card_separates_the_model_range_from_the_observed_count(ds):
-    """Brief D6 / clinical D-L5: the range is a model at the hospital-wide rate, and the observed count stands beside it."""
+    """The range is a model at the hospital-wide rate, and the observed count stands beside it."""
     icu = one(phenotype.detect(ds, "2026-03-08"), ward="ICU")
     assert unit_patients_with_pattern(ds, "ICU", "Staphylococcus aureus", ICU_PATTERN, "2026-03-03") == 0
     # Re-pinned: the background share now prints its x of n (3 of 34), as the seen-before card does
@@ -165,7 +165,7 @@ def test_medb_esbl_lookalike_is_heterogeneous_and_ranked_lower(ds):
     s = one(thl.detect(ds, "2024-09-22"), ward="MED-B")
     assert s["template_id"] == "ob_thl_cluster_mixed" and s["priority"] == "P2" and s["advice"] is None
     assert (s["slots"]["n_patients"], s["slots"]["n_profiles"]) == (4, 3)
-    assert "ranked lower by our rules (truth unknown)" in s["text"]
+    assert "so ranked below a shared-antibiogram cluster" in s["text"]
     uro = one(phenotype.detect(ds, "2025-06-08"), ward="URO")
     assert s["evidence"]["rank"]["score"] < uro["evidence"]["rank"]["score"]
     assert "decoy" not in json.dumps(s).lower()
@@ -215,7 +215,7 @@ def test_vre_card_on_ger_by_14_sep_2026_brief(ds):
 
 
 def test_thl_actions_follow_thl_2_2020(ds):
-    """Clinical D-H3, D-M5, D-L1, D-L2, D-L3 (THL Ohjaus 2/2020 sections 5.2, 8.1.1, 8.1.3, 8.2.3, appendix 1)."""
+    """THL guidance (THL Ohjaus 2/2020 sections 5.2, 8.1.1, 8.1.3, 8.2.3, appendix 1)."""
     ger_kp = one(thl.detect(ds, "2026-06-21"), ward="GER")  # ESBL K. pneumoniae: contact precautions and screening
     assert ger_kp["organism"] == "Klebsiella pneumoniae"
     assert ger_kp["evidence"]["action"].startswith("Contact precautions; screen exposed patients")
@@ -278,12 +278,15 @@ def test_seen_before_icu_mrsa_before_the_cluster(ds):
     # Re-pinned from 23 of 94 "to date": that counted the cluster's own 12 patients (my-ward cross-area note), so the
     # background is now the MRSA patients sampled before the cluster's first sample on 3 Mar
     assert (c["bg_k"], c["bg_n"]) == (11, 80)
-    assert "Before this cluster, 11 of 80 MRSA patients had this antibiogram (13.8%), so a match is weak" in s["text"]
+    assert (
+        "In all the data before this cluster, 11 of 80 MRSA patients had this antibiogram (13.8%), so a match is weak"
+        in s["text"]
+    )
     assert registry.with_title(s)["title"] == "ICU: MRSA antibiogram seen before on other units"
 
 
 def test_seen_before_icu_mrsa_back_on_icu(ds):
-    """The 22.7% of 110 golden is analysis 52 over the whole dataset, so it is reached at DATA_END; earlier dates
+    """The 22.7% of 110 golden is the share over the whole dataset, so it is reached at DATA_END; earlier dates
     show the share among the MRSA patients sampled up to that date."""
     s = one(seen_before.detect(ds, "2026-09-13"), ward="ICU")
     assert s["slots"]["return_date"] == "2026-09-12" and s["status"] == "new"
@@ -324,7 +327,7 @@ def test_outbreak_templates_have_no_literal_numbers():
 
 
 def test_background_share_needs_ten_patients():
-    """Brief D3 rule for every background share: x of n always, no percentage below 10, "small n" from 10 to 29."""
+    """The rule for every background share: x of n always, no percentage below 10, "small n" from 10 to 29."""
     slots = {
         "ward": "ICU",
         "organism_label": "VRE E. faecium",
@@ -343,7 +346,7 @@ def test_background_share_needs_ten_patients():
 
 
 def test_resolved_outbreak_items(ds):
-    """Brief D5: the week after a cluster stops, its card and its seen-before match say so."""
+    """The week after a cluster stops, its card and its seen-before match say so."""
     (s,) = icu_clusters(ds, "2026-04-12")
     assert s["status"] == "resolved" and s["advice"] is None
     assert s["text"] == (

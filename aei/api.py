@@ -1,4 +1,4 @@
-"""The HTTP API (CONTRACTS.md sections 7, 7b and 10). Run: uvicorn aei.api:app --host 127.0.0.1 --port 8765
+"""The HTTP API (CONTRACTS.md sections 7, 7b and 9). Run: uvicorn aei.api:app --host 127.0.0.1 --port 8765
 
 - The dataset loads once at startup. Without it the server still starts: /api/health says data_loaded=false and the
   data endpoints answer 503.
@@ -19,7 +19,6 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
-import pandas as pd
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -33,7 +32,6 @@ from . import (
     cds_hooks,
     data,
     i18n,
-    jev,
     narrator,
     phenotype_rules,
     precompute,
@@ -42,11 +40,9 @@ from . import (
     views,
 )
 from . import config as C
-from .data import FLAGS
 from .detectors.policy import policy_states
 from .i18n import label
-from .narrator.base import AUDIENCES, LANGUAGES
-from .validator import validate_rendered, validate_skeleton
+from .narrator.base import LANGUAGES
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +61,8 @@ CDS_HOOKS_NOTE = (
     "prototype: no EHR is connected."
 )
 SYNTHETIC_NOTE = "Synthetic isolate ids; no patient names or ids."
+# The order card lists keep reasons in the viewer's language; the store keeps the English one
+KEEP_REASON_BY_LABEL = {label(r, lang): r for r in C.KEEP_REASONS for lang in i18n.LANGS}
 
 
 # --------------------------------------------------------------------------- app, startup, guards
@@ -258,20 +256,8 @@ class HeadsUpIn(Dated):
     language: Literal[LANGUAGES] = "en"
 
 
-class NarrateIn(Dated):
-    signal_id: Code
-    audience: Literal[AUDIENCES] = "infection_control"
-    language: Literal[LANGUAGES] = "en"
-
-
 class RoleIn(BaseModel):
     approved_by_role: str = "infection_control"
-
-
-class ValidateIn(BaseModel):
-    text: str = Field(max_length=2000)
-    slots: dict[str, str | int | float | list[int | float] | None] = Field(default_factory=dict, max_length=50)
-    mode: Literal["skeleton", "rendered"] = "skeleton"
 
 
 class OrderIn(Dated):
@@ -445,7 +431,6 @@ def meta(lang: Lang = "en") -> dict:
         ],
         "cds_hooks": {"discovery": "/cds-services", "note": label(CDS_HOOKS_NOTE, lang)},
         "narrator": narrator.selected(),
-        "second_opinion": jev.status(),
         "session_header": C.SESSION_HEADER,
     }
 
@@ -478,36 +463,6 @@ def replay_weeks(ds: Ds) -> list[dict]:
     return precompute.replay_weeks(ds)
 
 
-@app.get("/api/feed")
-def feed(ds: Ds, as_of: AsOf, lang: Lang = "en") -> dict:
-    """The "continuously updated" ticker: cultures and isolates sampled in the week ending as_of, by unit. Counts only."""
-    end = pd.Timestamp(as_of)
-    cultures = data.window(ds.cultures, end, 7).ward_code.value_counts()
-    isolates = data.window(ds.isolates, end, 7)
-    flagged = isolates.groupby("ward_code")[list(FLAGS)].sum()
-    n_isolates = isolates.ward_code.value_counts()
-    units = [
-        {
-            "ward": w,
-            "label": label(name, lang),
-            "cultures": int(cultures.get(w, 0)),
-            "isolates": int(n_isolates.get(w, 0)),
-            "flagged": {f.upper(): int(flagged.at[w, f]) for f in FLAGS if w in flagged.index and flagged.at[w, f]},
-        }
-        for w, name in C.WARD_LABELS.items()
-    ]
-    return {
-        "as_of": as_of,
-        "monday": _monday(as_of),
-        "from": (end - pd.Timedelta(days=6)).date().isoformat(),
-        "to": as_of,
-        "refreshed": label("nightly", lang),
-        "note": label(cds.LAG_NOTE, lang),
-        "units": units,
-        "totals": {"cultures": sum(u["cultures"] for u in units), "isolates": sum(u["isolates"] for u in units)},
-    }
-
-
 @app.get("/api/signals/{signal_id}")
 def case_file(signal_id: str, ds: Ds, session: Viewer, as_of: AsOf, lang: Lang = "en") -> dict:
     """Everything behind one brief item: the signal, its line list and epi curve, seen-before matches, step-up
@@ -532,14 +487,6 @@ def case_file(signal_id: str, ds: Ds, session: Viewer, as_of: AsOf, lang: Lang =
         "heads_ups": store.heads_ups(session, as_of, signal_id),
         "note": f"{label(cds.LAG_NOTE, lang)} {label(SYNTHETIC_NOTE, lang)}",
     }
-
-
-@app.get("/api/second-opinion/{signal_id}")
-def second_opinion(signal_id: str, ds: Ds, as_of: AsOf) -> dict:
-    """Jev on an infection-control item, only when configured and calibrated. Never used in prescribing."""
-    if jev.status() != "configured":
-        return {"status": "not_configured"}
-    return jev.JevAdapter().assess(_signal(ds, as_of, signal_id)) or {"status": "no_answer"}
 
 
 # --------------------------------------------------------------------------- alerts and heads-ups (per session)
@@ -597,25 +544,10 @@ def approve_heads_up(heads_up_id: str, session: Session, body: RoleIn | None = N
     return store.approve_heads_up(session, heads_up_id, (body or RoleIn()).approved_by_role)
 
 
-@app.get("/api/feedback")
 @app.get("/api/order-feedback/summary")
 def feedback_summary(session: Viewer, as_of: AsOf) -> list[dict]:
     """Infection control's view of order-card outcomes per source: counts only, no user or patient ids."""
     return store.feedback_summary(session, as_of)
-
-
-@app.post("/api/narrate")
-def narrate(body: NarrateIn, request: Request, ds: Ds, lang: Lang = "en") -> dict:
-    signal = _signal(ds, body.day(), body.signal_id)
-    language = body.language if "language" in body.model_fields_set else lang
-    return _narrate(request, signal["template_id"], signal["slots"], body.audience, language).to_dict()
-
-
-@app.post("/api/validate")
-def validate(body: ValidateIn) -> dict:
-    if body.mode == "skeleton":
-        return validate_skeleton(body.text, list(body.slots)).to_dict()
-    return validate_rendered(body.text, body.slots).to_dict()
 
 
 # --------------------------------------------------------------------------- the ward doctor: My ward and orders
@@ -766,7 +698,7 @@ def order_feedback(body: OrderFeedbackIn, session: Session) -> dict:
         state=body.state,
         outcome=body.outcome,
         as_of=body.day(),
-        reason=body.reason,
+        reason=KEEP_REASON_BY_LABEL.get(body.reason, body.reason),
         changed_to=body.changed_to,
     )
 

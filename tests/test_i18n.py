@@ -176,7 +176,7 @@ def seeds(tmp_path, monkeypatch):
     monkeypatch.setattr(C, "STATE_DB", tmp_path / "state.sqlite")
     store.reset()
     store.seed_demo()
-    return store.alerts("judge-dddd-0004")
+    return store.alerts("visitor-dddd-0004")
 
 
 # --------------------------------------------------------------------------- the dictionaries
@@ -404,10 +404,10 @@ def test_finnish_order_layer_has_no_english_and_every_digit_comes_from_a_slot(ds
 def client(cache, tmp_path, monkeypatch):
     monkeypatch.setattr(C, "STATE_DB", tmp_path / "state.sqlite")
     monkeypatch.setattr(C, "PUBLIC", False)
-    for name in ("AEI_NARRATOR", "ANTHROPIC_API_KEY", "JEV_API_KEY"):
+    for name in ("AEI_NARRATOR", "ANTHROPIC_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     api.LIMITER.hits.clear()
-    with TestClient(api.app, headers={C.SESSION_HEADER: "judge-eeee-0005"}) as c:
+    with TestClient(api.app, headers={C.SESSION_HEADER: "visitor-eeee-0005"}) as c:
         yield c
 
 
@@ -472,7 +472,8 @@ def test_my_ward_in_finnish(client):
         + [w["label"] for w in fi["windows"]]
     )
     assert english_words(" ".join(texts)) == set()
-    assert fi["banners"][0]["text"].endswith("Nostanut esiin: infektioiden torjunta, 9.3.2026; voimassa 23.3. asti.")
+    assert fi["banners"][0]["text"].startswith("Nostanut esiin 9.3.2026: infektioiden torjunta. Poikkeava MRSA")
+    assert fi["banners"][0]["text"].endswith("Voimassa 23.3. asti.")
     assert "Kefoksitiini: ei näytetä; MRSA-seulontatesti, ei hoitovaihtoehto" in texts
 
 

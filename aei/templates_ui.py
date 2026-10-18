@@ -21,12 +21,14 @@ TEMPLATES = {
     "cds_alert_title_cluster": {"text": "Possible {what} cluster"},
     "cds_alert_title_marker": {"text": "{what} alert"},
     "cds_alert_title_plain": {"text": "Infection-control alert"},
-    "cds_alert_headline_r": {"text": "{title} on {ward_label}. The flagged antibiogram is R to {drug}."},
-    "cds_alert_headline_r_how": {"text": "{title} on {ward_label}. The flagged antibiogram is R to {drug} ({how})."},
-    "cds_alert_headline_applies": {"text": "{title} on {ward_label}. The alert applies to {drug}."},
+    "cds_alert_headline_r": {"text": "{title}, {ward_label}. The flagged antibiogram is R to {drug}."},
+    "cds_alert_headline_r_how": {"text": "{title}, {ward_label}. The flagged antibiogram is R to {drug} ({how})."},
+    "cds_alert_headline_applies": {"text": "{title}, {ward_label}. The alert applies to {drug}."},
     "cds_alert_summary_r": {"text": "{title} on {unit}: the flagged antibiogram is R to {drug}"},
     "cds_alert_summary_applies": {"text": "{title} on {unit}: the alert applies to {drug}"},
-    "cds_alert_text": {"text": "{message} Flagged by {role}, {approved_on:date}; expires {expires_on:short_date}."},
+    "cds_alert_text": {
+        "text": "As flagged by {role} on {approved_on:date}: {message} Expires {expires_on:short_date}."
+    },
     "cds_notice_drug": {"text": "{title} on {unit}. The alert does not apply to {drug}."},
     "cds_notice_indications": {"text": "{title} on {unit}. The alert applies to {indications} only."},
     # this patient's own previous isolate

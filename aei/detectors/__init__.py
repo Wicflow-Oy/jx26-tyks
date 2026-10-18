@@ -1,19 +1,12 @@
-"""Detector registry. The brief imports detectors only through here, so one missing detector never breaks it.
+"""Detector registry: the brief runs every detector in `DETECTORS`, in order, through `run`.
 
-`DETECTORS` lists module names inside `aei.detectors`. Each module exposes
-`detect(ds, as_of, rule="readme_period") -> list[signal]` (strictly as-of). Modules are imported lazily; a missing
-module, an import error or an exception inside `detect` is logged once as a warning and that detector is skipped.
-Every signal that passes through `run` gets a `title`: a short row title rendered from its template's `title` and its
-slots, so the UI never parses `text` for one.
-
-Optional keyword arguments are passed only when a detector's signature accepts them:
-  window  -- the brief window key ("4w"), for detectors with a window length;
-  signals -- the signals produced so far this run (so `seen_before` can look at active clusters).
+Each module exposes `detect(ds, as_of, rule="readme_period") -> list[signal]` (strictly as-of); the detectors with a
+window length (`WINDOWED`) also take the brief's window key. A detector that fails raises: the brief shows an error,
+never a quiet week that is missing a detector. Every signal that passes through `run` gets a `title`: a short row
+title rendered from its template's `title` and its slots, so the UI never parses `text` for one.
 """
 
 import importlib
-import inspect
-import logging
 
 import pandas as pd
 
@@ -21,9 +14,6 @@ from .. import config as C
 from ..render import render
 from ..templates import TEMPLATES
 
-log = logging.getLogger(__name__)
-
-# Order matters: seen_before runs after the cluster detectors so it can read their signals.
 DETECTORS = [
     "phenotype",
     "thl",
@@ -35,6 +25,7 @@ DETECTORS = [
     "expert_rules",
     "completeness",
 ]
+WINDOWED = {"resistance_change", "outlier"}
 
 KIND_SECTION = {
     "phenotype_cluster": "unusual_patterns",
@@ -48,39 +39,6 @@ KIND_SECTION = {
     "completeness": "data_quality",
 }
 
-_MODULES: dict = {}
-_WARNED: set = set()
-
-
-def _warn_once(name: str, reason: str) -> None:
-    if (name, reason) not in _WARNED:
-        _WARNED.add((name, reason))
-        log.warning("detector %s skipped: %s", name, reason)
-
-
-def load(name: str):
-    """Import `aei.detectors.<name>` lazily; None (with a logged warning) when missing or broken."""
-    if name in _MODULES:
-        return _MODULES[name]
-    try:
-        mod = importlib.import_module(f"{__name__}.{name}")
-    except Exception as e:  # noqa: BLE001 -- any failure means "skip this detector", never "break the brief"
-        _warn_once(name, f"{type(e).__name__}: {e}")
-        return None
-    if not callable(getattr(mod, "detect", None)):
-        _warn_once(name, "module has no detect()")
-        return None
-    _MODULES[name] = mod
-    return mod
-
-
-def available() -> list[str]:
-    return [n for n in DETECTORS if load(n) is not None]
-
-
-def _valid(sig) -> bool:
-    return isinstance(sig, dict) and all(k in sig for k in ("id", "kind", "priority", "text", "slots", "evidence"))
-
 
 def with_title(s: dict) -> dict:
     """Set s["title"] from the template's title and the signal's slots (numbers only via slots, like the text)."""
@@ -90,37 +48,18 @@ def with_title(s: dict) -> dict:
 
 
 def run(ds, as_of, rule: str = "readme_period", window: str = "4w", names=None) -> tuple[list[dict], dict]:
-    """Run every registered detector for one as-of date. Returns (signals, report{"ran", "skipped"})."""
-    signals, ran, skipped, seen = [], [], [], set()
-    for name in DETECTORS if names is None else names:
-        mod = load(name)
-        if mod is None:
-            skipped.append({"name": name, "reason": "not available"})
-            continue
-        params = inspect.signature(mod.detect).parameters
-        kw = {}
-        if "window" in params:
-            kw["window"] = window
-        if "signals" in params:
-            kw["signals"] = list(signals)
-        try:
-            out = mod.detect(ds, as_of, rule=rule, **kw) or []
-        except Exception as e:  # noqa: BLE001
-            _warn_once(name, f"detect failed: {type(e).__name__}: {e}")
-            skipped.append({"name": name, "reason": f"failed: {type(e).__name__}"})
-            continue
-        ran.append(name)
-        for s in out:
-            if not _valid(s):
-                _warn_once(name, "returned a malformed signal (dropped)")
-                continue
+    """Run every registered detector (or `names`) for one as-of date. Returns (signals, {"ran": names})."""
+    names = DETECTORS if names is None else names
+    signals, seen = [], set()
+    for name in names:
+        detect = importlib.import_module(f"{__name__}.{name}").detect
+        for s in detect(ds, as_of, rule=rule, **({"window": window} if name in WINDOWED else {})):
             if s["id"] in seen:
                 continue
             seen.add(s["id"])
-            if not s.get("section"):
-                s["section"] = KIND_SECTION.get(s["kind"], "unusual_patterns")
+            s["section"] = s.get("section") or KIND_SECTION[s["kind"]]
             signals.append(with_title(s))
-    return signals, {"ran": ran, "skipped": skipped}
+    return signals, {"ran": list(names)}
 
 
 # ---- small shared helpers for the detectors (dates, labels) ----

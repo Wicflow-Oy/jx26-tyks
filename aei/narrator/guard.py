@@ -1,4 +1,4 @@
-"""Guards on live model calls (CONTRACTS.md section 10): a daily spend cap and per-IP rate limits.
+"""Guards on live model calls (CONTRACTS.md section 9): a daily spend cap and per-IP rate limits.
 
 - Spend: each response's `usage` tokens times PRICES (USD per million tokens) are added to today's UTC total in the
   `llm_spend` table of config.STATE_DB. Once the total reaches config.DAILY_SPEND_USD, no live call starts that day.

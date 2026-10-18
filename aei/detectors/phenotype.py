@@ -1,4 +1,4 @@
-"""Phenotype-cluster detector: patients sharing one antibiogram on one unit (port of analysis 09_leadtime, the spec detector).
+"""Phenotype-cluster detector: patients sharing one antibiogram on one unit.
 
 Daily, from day 182 (26-week learning period). On each day with a new isolate of a (unit, organism, antibiogram):
   npat  = distinct patients with that exact antibiogram on the unit in the last 28 days (>= 3 needed);
@@ -38,7 +38,7 @@ EPISODE_GAP_DAYS = 14
 RESOLVED_LIST_DAYS = 7
 MARKERS = ("cpe", "vre", "mrsa", "esbl")  # checked in this order when a cluster's isolates carry a flag
 MARKER_LABELS = {"cpe": "CPE", "vre": "VRE", "mrsa": "MRSA", "esbl": "ESBL"}
-CLASS_WEIGHT = {"cpe": 5, "vre": 5, "mrsa": 4, "esbl": 3, None: 1}  # ACH prioritiser (dossier 9.1)
+CLASS_WEIGHT = {"cpe": 5, "vre": 5, "mrsa": 4, "esbl": 3, None: 1}  # ACH prioritiser: marker class weight
 SPECIMEN_WEIGHT = {"blood": 1.5, "wound": 1.2, "urine": 1.0}
 H1_WEIGHT = {"strong": 3, "moderate": 2, "weak": 1}
 DATE_BASIS = f"sample dates; results usually arrive about {C.RESULT_LAG_DAYS} days later (the data has no result time)"
@@ -156,7 +156,7 @@ def finish(now: list, prev_ids: set, resolved: list) -> list:
 
 
 def rank(marker, specimens, h1_rating) -> dict:
-    """ACH prioritiser score (dossier 9.1): class weight x H1 rating x specimen weight. Larger ranks higher."""
+    """ACH prioritiser score: class weight x H1 rating x specimen weight. Larger ranks higher."""
     sw = max([SPECIMEN_WEIGHT.get(s, 1.0) for s in specimens] or [1.0])
     cw, hw = CLASS_WEIGHT.get(marker, 1), H1_WEIGHT.get(h1_rating, 1)
     return {"class_weight": cw, "h1": h1_rating, "specimen_weight": sw, "score": round(cw * hw * sw, 2)}
@@ -444,7 +444,7 @@ def build_signal(ds, ep, as_of, rule="readme_period") -> dict:
             "background_share": sm["bg_share"],
         },
         "method": (
-            "phenotype cluster (spec detector, analysis 09_leadtime): daily, panel-aware, 26-week learning, rarity "
+            "phenotype cluster: daily, panel-aware, 26-week learning, rarity "
             "gate < 15% of the organism and panel in the prior 52 weeks, binomial p < 1e-4 on distinct patients in 28 "
             "days; episodes join alerts less than 15 days apart"
         ),
@@ -492,7 +492,7 @@ def build_signal(ds, ep, as_of, rule="readme_period") -> dict:
 
 def detect(ds, as_of, rule="readme_period") -> list[dict]:
     """Phenotype-cluster signals at `as_of`. Marker clusters (MRSA, ESBL, VRE, CPE) are P1; clusters without a
-    resistance marker are P2 (the analysis ranked its two such episodes low; dossier 9.1 class weights)."""
+    resistance marker are P2 (class weights in CLASS_WEIGHT)."""
     check_rule(rule)
     as_of = ts(as_of)
     prev_ids = {S.signal_id(KIND, episode_key(ep)) for ep in active_clusters(ds, as_of - pd.Timedelta(days=7))}

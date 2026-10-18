@@ -1,4 +1,4 @@
-"""THL guidance rule cards (analysis 08_hidden, 24_alert_burden, dossier rule table; THL OHJ 2/2020).
+"""THL guidance rule cards (THL OHJ 2/2020).
 
 Single cards, P1, every case: the first CPE or VRE isolate of a patient. Shown for 28 days after the sample date
 (the default 4-week window): "new" in its first week, "ongoing" after, listed as resolved for one more week.
@@ -403,7 +403,9 @@ def _cluster_signal(ds, ep, as_of, rule) -> dict:
         "source": SOURCE,
     }
     if not same:
-        evidence["label"] = f"heterogeneous: {sm['n_profiles']} antibiograms, ranked lower by our rules (truth unknown)"
+        evidence["label"] = (
+            f"heterogeneous: {sm['n_profiles']} antibiograms, so ranked below a shared-antibiogram cluster"
+        )
     return S.make_signal(
         KIND,
         _cluster_key(ep),

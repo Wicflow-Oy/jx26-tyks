@@ -58,12 +58,6 @@ def briefs(ds, tmp_path_factory):
     return out
 
 
-def need(*names):
-    missing = [n for n in names if registry.load(n) is None]
-    if missing:
-        pytest.skip(f"detector(s) not available: {missing}")
-
-
 # ---------------------------------------------------------------- shape, map, counts, quiet
 
 
@@ -144,7 +138,7 @@ def test_quiet_is_eight_of_nine_when_only_icu_has_items(ds, tmp_cache, monkeypat
     )
 
     def fake_week(ds_, as_of, rule="readme_period", window="4w", cache=True):
-        return ([fake] if as_of == "2026-03-08" else []), {"ran": ["fake"], "skipped": []}
+        return ([fake] if as_of == "2026-03-08" else []), {"ran": ["fake"]}
 
     monkeypatch.setattr(brief, "week_signals", fake_week)
     b = brief.build_brief(ds, "2026-03-08")
@@ -207,7 +201,7 @@ def test_demo_phcs_data_gap(briefs):
     dq = items(b, "data_quality")
     gap = [it for it in dq if it["kind"] == "completeness"]
     assert len(gap) == 1 and gap[0]["ward"] == "PHC-S" and gap[0]["status"] == "new"
-    # Re-pinned: the detector counts cultures, and a data gap says nothing about resistance (audit #5)
+    # Re-pinned: the detector counts cultures, and a data gap says nothing about resistance
     assert gap[0]["text"] == "Health centre South: no cultures this week (usually 51 a week). Data gap, cause unknown."
     assert not any(it.get("template_id") == "trend_completeness_ok" for it in dq)
     assert next(u for u in b["map"]["units"] if u["ward"] == "PHC-S")["state"] == "no_data"
@@ -216,7 +210,7 @@ def test_demo_phcs_data_gap(briefs):
 def test_demo_icu_week_b2(briefs):
     b = briefs["2026-03-09"]
     ch = [it for it in items(b, "changed") if it["ward"] == "ICU" and it["status"] != "resolved"]
-    # Re-pinned: no ward outlier any more; its third "high" cell was P. mirabilis ciprofloxacin 1 of 2 (brief D4)
+    # Re-pinned: no ward outlier any more; its third "high" cell was P. mirabilis ciprofloxacin 1 of 2
     assert {it["kind"] for it in ch} == {"resistance_change"}
     assert "MRSA (cefoxitin screen positive): 3 of 8 S. aureus in the last 4 weeks" in ch[0]["text"]
     assert next(u for u in b["map"]["units"] if u["ward"] == "ICU")["state"] != "quiet"
@@ -228,7 +222,7 @@ def test_demo_trimethoprim_crossing(briefs):
     assert p["kind"] == "policy_line" and p["status"] == "new" and p["priority"] == "P2"
     assert "20.4%" in p["text"] and "160 of 786" in p["text"] and "21 Jun 2026" in p["text"]
     assert p["advice"] == "Review the empirical UTI guidance"
-    assert p["text"].endswith("Same window a year earlier: 15.9% (122 of 769).")  # it names no other drug (18 Oct)
+    assert p["text"].endswith("Same window a year earlier: 15.9% (122 of 769).")  # it names no other drug
     for w in ("PHC-N", "PHC-S"):
         u = next(u for u in b["map"]["units"] if u["ward"] == w)
         assert p["id"] in u["signal_ids"] and u["state"] in {"changed", "signal"}
@@ -248,18 +242,15 @@ def _unusual(b, ward):
 
 
 def test_demo_uro_esbl_cluster_b1(briefs):
-    need("phenotype")
     assert _unusual(briefs["2025-06-09"], "URO")
 
 
 def test_demo_icu_mrsa_three_patients_b1(briefs):
-    need("phenotype")
     icu = _unusual(briefs["2026-03-09"], "ICU")
     assert any(it["slots"].get("n_patients") == 3 for it in icu)
 
 
 def test_demo_seen_before_and_ger_vre_b1(briefs):
-    need("seen_before", "thl")
     b = briefs["2026-09-14"]
     assert any(it["ward"] == "ICU" or "ICU" in it["text"] for it in items(b, "seen_before"))
     assert any("VRE" in it["text"] for it in _unusual(b, "GER"))
@@ -277,7 +268,7 @@ def test_demo_seen_before_and_ger_vre_b1(briefs):
     ],
 )
 def test_detector_resolved_items_stay_resolved(ds, tmp_cache, as_of, item, p1, info, quiet_unit):
-    """Brief D1: an item its detector lists as resolved is not counted as active, and its unit is quiet again."""
+    """An item its detector lists as resolved is not counted as active, and its unit is quiet again."""
     b = brief.build_brief(ds, as_of)
     assert [it["status"] for it in items(b) if it["id"] == item] == ["resolved"]
     assert (b["counts"]["P1"], b["counts"]["info"]) == (p1, info)
@@ -299,7 +290,7 @@ def test_detector_resolved_items_stay_resolved(ds, tmp_cache, as_of, item, p1, i
     ],
 )
 def test_resolved_items_say_resolved(ds, tmp_cache, as_of, kinds):
-    """Brief D5: every kind's resolved item says "Resolved. Last flagged week ending <last week>", carries no advice
+    """Every kind's resolved item says "Resolved. Last flagged week ending <last week>", carries no advice
     and has a resolved title, instead of repeating last week's present-tense text."""
     last = f"Resolved. Last flagged week ending {render.fmt(pd.Timestamp(as_of) - pd.Timedelta(days=7), 'date')}"
     resolved = [it for it in items(brief.build_brief(ds, as_of)) if it["status"] == "resolved"]
@@ -310,7 +301,7 @@ def test_resolved_items_say_resolved(ds, tmp_cache, as_of, kinds):
 
 
 def test_resolved_items_say_what_changed(ds, tmp_cache):
-    """Brief D5: a resolved item states last week's flagged value and this week's, not last week's present tense."""
+    """A resolved item states last week's flagged value and this week's, not last week's present tense."""
     (gap,) = [it for it in items(brief.build_brief(ds, "2025-12-21"), "data_quality") if it["status"] == "resolved"]
     assert gap["text"] == (
         "Health centre South: data gap. Resolved. Last flagged week ending 14 Dec 2025: 0 cultures (usually 51 a "
@@ -327,7 +318,7 @@ def test_resolved_items_say_what_changed(ds, tmp_cache):
 
 
 def test_replay_ticks_count_active_items(ds, tmp_cache):
-    """Brief D1: the slider's tick counts are the brief header's counts."""
+    """The slider's tick counts are the brief header's counts."""
     (row,) = brief.precompute(ds, ["2026-03-01"])
     counts = brief.build_brief(ds, "2026-03-01")["counts"]
     assert (row["n_p1"], row["n_signals"]) == (counts["P1"], sum(counts.values())) == (1, 5)
@@ -449,7 +440,7 @@ def test_brief_cold_under_three_seconds(tmp_path):
         timeout=120,
     )
     seconds, n_ran = out.stdout.split()
-    assert int(n_ran) == len(registry.available()) and float(seconds) <= 3.0
+    assert int(n_ran) == len(registry.DETECTORS) and float(seconds) <= 3.0
 
 
 def test_brief_from_precomputed_cache_under_three_seconds(ds, tmp_cache):
