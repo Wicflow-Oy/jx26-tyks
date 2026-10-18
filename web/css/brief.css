@@ -381,7 +381,7 @@ button.row:hover {
   box-shadow: var(--sh-1);
 }
 
-/* data gap: hatched with a dashed outline (DESIGN §6); the words sit on a solid patch, not on the lines */
+/* data gap: hatched with a dashed outline; the words sit on a solid patch, not on the lines */
 .unit.gap {
   background: var(--hatch), var(--surface);
   border: 1px dashed var(--line-strong);

@@ -1,5 +1,5 @@
 {
-  "name": "aei-web",
+  "name": "strainwatch-web",
   "private": true,
   "description": "The web UI: plain HTML, CSS and ES modules served as static files. No build step and no runtime dependencies.",
   "type": "module",

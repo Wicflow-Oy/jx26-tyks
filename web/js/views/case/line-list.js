@@ -19,7 +19,7 @@ export function lineList({ item, file, asOf, names }) {
     { label: t("case.list.sample"), cell: (row) => dateShort(row.date) },
     many("ward") && { label: t("case.list.unit"), cell: (row) => row.ward },
     many("organism") && { label: t("case.list.organism"), cell: (row) => names.organism(row.organism) ?? row.organism },
-    { label: t("case.list.specimen"), cell: (row) => row.specimen, class: "hide-s" },
+    { label: t("case.list.specimen"), cell: (row) => names.specimen(row.specimen) ?? row.specimen, class: "hide-s" },
     { label: t("case.list.day"), cell: (row) => (row.care_day == null ? "–" : int(row.care_day)), class: "r" },
     ...drugs.map((code) => ({
       label: code,

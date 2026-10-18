@@ -5,6 +5,7 @@ import { mk } from "../../components/marker.js";
 import { h } from "../../dom.js";
 import { int } from "../../format.js";
 import { t } from "../../i18n.js";
+import { plural } from "../../text.js";
 
 const TONES = 8; // .tone-0 … .tone-7 in ward.css, darkest first
 
@@ -34,7 +35,7 @@ function mixRow(window, list) {
       "div",
       { class: "h" },
       h("b", null, window.label),
-      h("span", null, mk(`mix-${window.key}`, t("ward.mix.isolates", { n: int(total) }))),
+      h("span", null, mk(`mix-${window.key}`, plural("ward.mix.isolates", total, { n: int(total) }))),
     ),
     h(
       "div",

@@ -1,5 +1,5 @@
 // The overlay stack. Esc (or a click on the scrim) closes the highest open layer in the order
-// menu → sheet → replay sheet → tour → pushed page (DESIGN §6). Modal layers keep Tab inside themselves.
+// menu → sheet → replay sheet → tour → pushed page. Modal layers keep Tab inside themselves.
 // Browser Back closes every layer above the page, so a sheet never stays open over a page it no longer belongs to.
 
 import { $ } from "../dom.js";
@@ -44,9 +44,11 @@ export function focusables(el) {
 
 /** Focus the opener again if it is still on the page, else the first match of fallback, else main. */
 export function returnFocus(opener, fallback) {
-  const target =
-    opener?.isConnected && opener.getClientRects().length ? opener : (fallback && $(fallback)) || $("#main");
-  target?.focus({ preventScroll: true });
+  for (const target of [opener !== document.body && opener, fallback && $(fallback), $("#main")]) {
+    if (!target?.isConnected || !target.getClientRects().length) continue;
+    target.focus({ preventScroll: true });
+    if (document.activeElement === target) return;
+  }
 }
 
 document.addEventListener("keydown", (event) => {

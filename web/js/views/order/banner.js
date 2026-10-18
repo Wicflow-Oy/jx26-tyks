@@ -5,6 +5,7 @@ import { mondayOf } from "../../dates.js";
 import { h } from "../../dom.js";
 import { dateFull, dateLong } from "../../format.js";
 import { t } from "../../i18n.js";
+import { areaName } from "../../names.js";
 import { organismName } from "./previous-results.js";
 import { patientLine, unitName } from "./worklist.js";
 
@@ -27,7 +28,7 @@ export function patientBanner({ scenario, history, filters, asOf }) {
           "p",
           { class: "pt-sub" },
           patientLine(patient),
-          patient.home_area && ` · ${t("order.ehr.homeArea", { area: patient.home_area })}`,
+          patient.home_area && ` · ${t("order.ehr.homeArea", { area: areaName(patient.home_area, filters) })}`,
         ),
       ),
     ),

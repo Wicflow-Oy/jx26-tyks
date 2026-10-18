@@ -1,4 +1,4 @@
-// The changed-number marker for numbers a view updates in place across a replay step (DESIGN §7): a yellow
+// The changed-number marker for numbers a view updates in place across a replay step: a yellow
 // underline that fades over 1.2 s (.mk.marked in components.css; static under reduced motion). Numbers that are
 // re-rendered with mk() are compared by main.js instead.
 

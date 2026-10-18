@@ -52,10 +52,7 @@ const STEPS = [
   {
     state: (d) => ({ route: "ward", pane: null, asOf: d.later, params: d.item?.ward ? { ward: d.item.ward } : {} }),
     targets: () => ["#view .banner", "#view .lead", "#view .pagehead"],
-    text: (d) => {
-      const ward = d.item?.slots?.ward_label ?? d.item?.ward;
-      return ward ? t("tour.ward", { ward }) : t("tour.wardNone");
-    },
+    text: (d) => (d.wardLabel ? t("tour.ward", { ward: d.wardLabel }) : t("tour.wardNone")),
   },
   {
     // the demo patient on the signal's unit (GET /api/demo/scenarios); the order view opens the visit's own week
@@ -144,16 +141,18 @@ async function tourData() {
   const start = getTourStart() || getState().asOf;
   const nextWeek = weekAfter(1, start) ?? start;
   const monthEnd = playWeeks().at(-1) ?? nextWeek;
-  const [nextBrief, endBrief, scenarios] = await Promise.all([
+  const [nextBrief, endBrief, scenarios, meta] = await Promise.all([
     loadBrief(nextWeek).catch(() => null),
     loadBrief(monthEnd).catch(() => null),
     get("/api/demo/scenarios", {}, { asOf: false }).catch(() => []),
+    get("/api/meta", {}, { asOf: false }).catch(() => null),
   ]);
   const open = briefItems(nextBrief).filter(isSignal);
   const item = byPriority(open.filter((x) => x.status === "new"))[0] ?? byPriority(open)[0] ?? null;
   const later = item && findItem(endBrief, item.id) ? monthEnd : nextWeek;
   const scenario = Array.isArray(scenarios) && item ? scenarios.find((x) => x.unit === item.ward)?.key : undefined;
-  return { start, next: nextWeek, later, item, scenario };
+  const wardLabel = item?.ward && (meta?.wards?.find((w) => w.code === item.ward)?.label ?? item.ward);
+  return { start, next: nextWeek, later, item, scenario, wardLabel };
 }
 
 function endTour() {

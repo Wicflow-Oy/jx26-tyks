@@ -5,10 +5,10 @@ import { mk } from "../../components/marker.js";
 import { daysBetween, parseISO } from "../../dates.js";
 import { h } from "../../dom.js";
 import { dateShort, int } from "../../format.js";
-import { t } from "../../i18n.js";
+import { getLang, t } from "../../i18n.js";
 import { signalTitle } from "../../signals.js";
 
-// kinds whose caveat must sit right under the title (DESIGN §8 wording)
+// kinds whose caveat must sit right under the title
 const CAVEATS = ["phenotype_cluster", "seen_before"];
 
 export function caseHead(item) {
@@ -69,7 +69,12 @@ export function metaStrip(item, file, names) {
 }
 
 /** "3 Mar 2026" with the year quiet. */
-const withYear = (iso) => [dateShort(iso), " ", h("small", null, String(parseISO(iso).getUTCFullYear()))];
+// "3 Mar 2026" · "3.3.2026" (a Finnish short date ends in its own period, so the year follows it directly)
+const withYear = (iso) => [
+  dateShort(iso),
+  getLang() === "fi" ? "" : " ",
+  h("small", null, String(parseISO(iso).getUTCFullYear())),
+];
 
 /** "7 Mar +4 days" */
 function firstAlert(firstSample, alertDate) {

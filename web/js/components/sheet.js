@@ -51,7 +51,9 @@ export function openSheet({ eyebrow, title, body = [], note, actions = [], initi
     close,
   };
   current = handle;
-  requestAnimationFrame(() => current === handle && (initialFocus ?? focusables(el).at(-1) ?? el).focus());
+  // first focus: initialFocus, else the last control that does something (a "done" chip is aria-disabled)
+  const target = () => initialFocus ?? focusables(el).findLast((node) => node.ariaDisabled !== "true") ?? el;
+  requestAnimationFrame(() => current === handle && target().focus());
 
   function close() {
     if (current !== handle) return;

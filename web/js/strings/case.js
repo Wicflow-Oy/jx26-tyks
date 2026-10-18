@@ -72,12 +72,12 @@ export const en = {
   "cluster.firstAlert": "First alert {date}, {days} days after the first sample.",
   "cluster.shared": "Shared antibiogram",
   "cluster.expected":
-    "{n} patients since {date}. In a whole year {unit} expects about {expected} (usually {low}–\u2060{high} a year).",
+    "{n} patients since {date}. At the hospital-wide share: about {expected} patients a year with this antibiogram on {unit} (range {low}–\u2060{high} a year).",
   "cluster.onset": "{share} hospital-onset.",
   "stepup.positive": "Count step-up: supports a change",
   "stepup.negative": "Count step-up: no change shown",
   "stepup.counts":
-    "{n} new patients to {date}; usually {low}–\u2060{high} in the same time, from the {weeks} weeks before.",
+    "{n} new patients in the {recent} weeks to {date}; usually {low}–\u2060{high} in that time, from the {weeks} weeks before.",
   "stepup.only": "Supporting evidence only; it describes past counts.",
   "window.last": "Last {weeks} weeks",
   "window.before": "{weeks} weeks before",
@@ -95,7 +95,7 @@ export const en = {
 
   "seen.bars": "Earlier patients with the same antibiogram before {date}, by unit",
   "seen.back": "Back on {unit} on {dates}.",
-  "seen.cluster": "The cluster began {date} with {n} patients.",
+  "seen.cluster": "The cluster began {date}; {n} patients in all.",
 
   // epi curve
   "epi.shares": "Shares {pattern}",
@@ -131,7 +131,7 @@ export const en = {
   "status.inBrief": "In the brief of {date}",
   "status.firstSample": "first sample {date}",
   "status.approved": "Approved {date} by infection control",
-  "status.seed": "Demo seed",
+  "status.seed": "Shared alert",
   "status.until": "until {date}",
   "status.expired": "Approved {approved} · expired {until}",
   "status.again": "Approve again?",
@@ -283,12 +283,12 @@ export const fi = {
   "cluster.firstAlert": "Ensimmäinen hälytys {date}, {days} pv ensimmäisen näytteen jälkeen.",
   "cluster.shared": "Yhteinen herkkyysprofiili",
   "cluster.expected":
-    "{n} potilasta {date} alkaen. Koko vuoden odotettu määrä yksikössä {unit} on noin {expected} (tavallisesti {low}–\u2060{high} vuodessa).",
+    "{n} potilasta {date} alkaen. Koko sairaalan osuudella: noin {expected} potilasta vuodessa tällä herkkyysprofiililla yksikössä {unit} (vaihteluväli {low}–\u2060{high} vuodessa).",
   "cluster.onset": "Sairaalasyntyisiä {share}.",
   "stepup.positive": "Tapausmäärän nousun testi: tukee muutosta",
-  "stepup.negative": "Tapausmäärän nousun testi: ei muutosta",
+  "stepup.negative": "Tapausmäärän nousun testi: ei osoita muutosta",
   "stepup.counts":
-    "{n} uutta potilasta {date} asti; tavallisesti {low}–\u2060{high} samassa ajassa edeltävien {weeks} viikon perusteella.",
+    "{n} uutta potilasta {recent} viikon aikana {date} asti; tavallisesti {low}–\u2060{high} samassa ajassa edeltävien {weeks} viikon perusteella.",
   "stepup.only": "Vain tukeva näyttö; kuvaa toteutuneita lukumääriä.",
   "window.last": "Viimeiset {weeks} viikkoa",
   "window.before": "Edeltävät {weeks} viikkoa",
@@ -340,7 +340,7 @@ export const fi = {
   "status.inBrief": "Katsauksessa {date}",
   "status.firstSample": "ensimmäinen näyte {date}",
   "status.approved": "Infektioiden torjunta hyväksyi {date}",
-  "status.seed": "Demon esimerkki",
+  "status.seed": "Yhteinen hälytys",
   "status.until": "voimassa {date} asti",
   "status.expired": "Hyväksytty {approved} · päättyi {until}",
   "status.again": "Hyväksytäänkö uudelleen?",

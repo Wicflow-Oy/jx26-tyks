@@ -69,7 +69,7 @@ export const en = {
   "map.count": "{quiet} of {units}",
   "map.schematic": "Schematic, not a floor plan",
   "map.units": "Hospital units",
-  "map.areas": "Home areas · primary care",
+  "map.areas": "Patients' home areas",
   "map.area": "Home area {area}",
   "map.meaning": "Quiet means no open signal this week. Resistance can still be present.",
   "map.legend": "Legend",
@@ -144,7 +144,7 @@ export const fi = {
   "map.count": "{quiet}/{units}",
   "map.schematic": "Kaavio, ei pohjapiirros",
   "map.units": "Sairaalan yksiköt",
-  "map.areas": "Kotialueet · perusterveydenhuolto",
+  "map.areas": "Potilaiden kotialueet",
   "map.area": "Kotialue {area}",
   "map.meaning":
     "Ilman signaaleja: yksiköllä ei ole tällä viikolla avoimia signaaleja. Resistenssiä voi silti esiintyä.",

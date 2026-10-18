@@ -75,10 +75,6 @@ export const en = {
   "unit.quiet": "As usual",
   "unit.count": "{n} open",
 
-  // signal titles from slots, used only while the API sends no slots.title
-  "title.cluster": "Possible cluster of {organism}",
-  "title.clusterHero": "{ward}: possible cluster of {organism}",
-  "title.pattern": "{organism} pattern",
   "kind.phenotype_cluster": "Unusual pattern",
   "kind.thl_rule": "THL rule",
   "kind.count_stepup": "Count step-up",
@@ -204,9 +200,6 @@ export const fi = {
   "unit.quiet": "Ennallaan",
   "unit.count": "avoimia {n}",
 
-  "title.cluster": "Mahdollinen rypäs ({organism})",
-  "title.clusterHero": "{ward}: mahdollinen rypäs ({organism})",
-  "title.pattern": "Herkkyysprofiili ({organism})",
   "kind.phenotype_cluster": "Poikkeava löydöskuvio",
   "kind.thl_rule": "THL:n ohje",
   "kind.count_stepup": "Tapausmäärän nousu",

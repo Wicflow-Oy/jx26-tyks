@@ -36,12 +36,6 @@ export const en = {
   "form.draft": "Draft",
   "form.indication": "Indication",
   "form.indicationPick": "Select indication",
-  // used only until GET /api/meta lists `indications` (CONTRACTS §7)
-  "form.indicationFallback": [
-    { key: "uti", label: "Urinary tract infection" },
-    { key: "bloodstream", label: "Bloodstream infection" },
-    { key: "wound", label: "Wound infection" },
-  ],
   "form.medication": "Medication",
   "form.medicationHint": "generic name or ATC",
   "form.search": "Search medication",
@@ -89,10 +83,8 @@ export const en = {
   "layer.numbers": "Numbers",
   "layer.showDetails": "Show details",
   "layer.hideDetails": "Hide details",
-  "layer.ask": "Consider whether this drug still fits. The decision is yours.",
   "layer.happening": "What is happening",
   "layer.notes": "About this patient's isolates",
-  "layer.details": "All drugs on My ward",
 
   // previous results (this patient)
   "prev.title": "Previous results",
@@ -116,8 +108,6 @@ export const en = {
 
   // the check at signing (warning only)
   "sign.kicker": "Check before signing",
-  "sign.edit": "Edit the order",
-  "sign.keep": "Keep {drug}",
   "sign.keepMore": "{label}…",
   "sign.why": "Why keep {drug}?",
   "sign.keepSign": "{label} and sign",
@@ -158,11 +148,6 @@ export const fi = {
   "form.draft": "Luonnos",
   "form.indication": "Indikaatio",
   "form.indicationPick": "Valitse indikaatio",
-  "form.indicationFallback": [
-    { key: "uti", label: "Virtsatieinfektio" },
-    { key: "bloodstream", label: "Verenkiertoinfektio" },
-    { key: "wound", label: "Haavainfektio" },
-  ],
   "form.medication": "Lääke",
   "form.medicationHint": "vaikuttava aine tai ATC",
   "form.search": "Hae lääkettä",
@@ -208,10 +193,8 @@ export const fi = {
   "layer.numbers": "Luvut",
   "layer.showDetails": "Näytä tiedot",
   "layer.hideDetails": "Piilota tiedot",
-  "layer.ask": "Harkitse, sopiiko tämä lääke edelleen. Päätös on sinun.",
   "layer.happening": "Mitä on meneillään",
   "layer.notes": "Tämän potilaan isolaateista",
-  "layer.details": "Kaikki lääkkeet Oma osasto -näkymässä",
 
   "prev.title": "Aiemmat tulokset",
   "prev.count": "Tuloksia viimeisten 52 viikon aikana: {n} · näytteenottopäivät",
@@ -232,8 +215,6 @@ export const fi = {
   "nums.homeArea": "potilaat alueelta {area}",
 
   "sign.kicker": "Tarkista ennen allekirjoitusta",
-  "sign.edit": "Muokkaa määräystä",
-  "sign.keep": "Pidä {drug}",
   "sign.keepMore": "{label}…",
   "sign.why": "Miksi {drug} pidetään?",
   "sign.keepSign": "{label} ja allekirjoita",

@@ -10,6 +10,7 @@ import { h } from "../../dom.js";
 import { dateShort, int, pct } from "../../format.js";
 import { t } from "../../i18n.js";
 import { setParams } from "../../state.js";
+import { plural } from "../../text.js";
 import { isCombo } from "./cells.js";
 import { drugRow } from "./drug-row.js";
 import { FILTER_KEYS, recentWindows, weeksOf } from "./scope.js";
@@ -94,13 +95,13 @@ function columnHead([recent, year], line) {
       { class: "wh" },
       h("b", null, recent.label),
       h("span", null, t("ward.cov.range", { from: dateShort(recent.from), to: dateShort(recent.to) })),
-      h("span", null, mk(`n-${recent.key}`, t("ward.cov.isolates", { n: int(recent.n_isolates ?? 0) }))),
+      h("span", null, mk(`n-${recent.key}`, isolates("ward.cov.isolates", recent.n_isolates))),
     ),
     h(
       "span",
       { class: "wh" },
       h("b", null, year.label),
-      h("span", null, mk(`n-${year.key}`, t("ward.cov.isolates", { n: int(year.n_isolates ?? 0) }))),
+      h("span", null, mk(`n-${year.key}`, isolates("ward.cov.isolates", year.n_isolates))),
     ),
     h("span"),
   );
@@ -160,3 +161,5 @@ function notShown(list) {
     ),
   );
 }
+
+const isolates = (key, n = 0) => plural(key, n, { n: int(n) });

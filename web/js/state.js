@@ -37,6 +37,12 @@ export function initState(replay, lang) {
   addEventListener("hashchange", syncFromHash);
 }
 
+/** Before /api/meta has loaded: the language from the URL (else `lang`), so the boot screens and request use it. */
+export function presetLang(lang) {
+  const wanted = parseHash(location.hash).lang ?? lang;
+  state = Object.freeze({ ...state, lang: wanted === "fi" ? "fi" : "en" });
+}
+
 /** fn(state, prev) runs after every change. Returns an unsubscribe function. */
 export function subscribe(fn) {
   listeners.add(fn);
@@ -78,11 +84,11 @@ export function openPane(kind, id = "") {
 }
 
 /**
- * The default selection beside a page that has just opened (DESIGN §4: the highest-priority open item), when no
- * pane is open. It replaces the history entry, so Back still leaves the page.
+ * The default selection beside a page (the highest-priority open item), when no pane is open or the open one is
+ * still the default. It replaces the history entry, so Back still leaves the page.
  */
 export function selectDefaultPane(kind, id) {
-  if (state.pane || !id) return;
+  if (!id || (state.pane && !isDefaultPane())) return;
   defaultPane = { kind, id };
   setState({ pane: defaultPane });
 }

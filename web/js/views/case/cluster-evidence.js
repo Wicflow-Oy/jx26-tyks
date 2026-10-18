@@ -103,6 +103,7 @@ function stepUp(stepup, asOf) {
       { class: "cap" },
       t("case.stepup.counts", {
         n: int(stepup.y4),
+        recent: int(stepup.recent_weeks),
         low: int(stepup.usual_low),
         high: int(stepup.usual_high),
         weeks: int(stepup.baseline_weeks),

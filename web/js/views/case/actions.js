@@ -1,6 +1,6 @@
 // The sticky action bar: one primary (Approve alert / Approve again / done "Alert active · until 23 Mar") and one
 // bordered (Draft heads-up to ED / Open heads-up draft / done "Approved · not sent"), then the note that nothing
-// is sent. Lab checks, data completeness and the quiet line get the note only (DESIGN §9).
+// is sent. Lab checks, data completeness and the quiet line get the note only.
 
 import { button } from "../../components/buttons.js";
 import { paneActions } from "../../components/pane.js";

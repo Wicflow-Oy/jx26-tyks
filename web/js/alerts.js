@@ -1,4 +1,4 @@
-// Infection control's approved alerts, read the strict as-of way (DESIGN §4): an alert counts once
+// Infection control's approved alerts, read the strict as-of way: an alert counts once
 // approved_on <= as_of + 1, and it is active while as_of + 1 <= expires_on and it is not revoked by then.
 // Shared by the brief's hero, the case file, the sidebar and the My ward banner, so they all agree.
 

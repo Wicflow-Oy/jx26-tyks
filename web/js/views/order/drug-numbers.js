@@ -5,6 +5,7 @@ import { intervalBar } from "../../components/interval-bar.js";
 import { h } from "../../dom.js";
 import { int, interval, pct } from "../../format.js";
 import { t } from "../../i18n.js";
+import { areaName } from "../../names.js";
 import { drugName, line } from "./parts.js";
 import { organismName, specimenWord } from "./previous-results.js";
 
@@ -61,7 +62,7 @@ function windowRow(label, r, n, share, ci, state, word) {
     h(
       "span",
       { class: "nums-share num" },
-      `${pct(share)} ${interval(ci)}`,
+      `${pct(share, 1)} ${interval(ci)}`,
       state === "low_n" && h("span", { class: "nums-few" }, t("order.nums.few")),
     ),
     h("span", { class: "nums-bar" }, intervalBar({ value: share, interval: ci, max: 1 })),
@@ -76,7 +77,7 @@ function populationLabel(population, filters) {
   const sex = filters?.sexes?.find((s) => s.code === population.sex)?.label;
   return [
     (population.units ?? []).join(" + "),
-    population.home_area && t("order.nums.homeArea", { area: population.home_area }),
+    population.home_area && t("order.nums.homeArea", { area: areaName(population.home_area, filters) }),
     population.specimen && specimenWord(population.specimen, filters),
     population.organism ? organismName(population.organism, filters) : t("order.nums.allOrganisms"),
     sex && sex.toLocaleLowerCase(),

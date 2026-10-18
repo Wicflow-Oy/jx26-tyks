@@ -13,7 +13,7 @@
 // Page views start with shell.pageHead(). Elements with data-pane-id="<id>" get aria-current while that pane
 // item is open; numbers wrapped in marker.mk(key, …) are underlined when a replay step changes them.
 // After any write (an approval, a heads-up) the page and the pane render again from fresh data.
-// ?state=loading or ?state=error shows those states for the page (DESIGN §3).
+// ?state=loading or ?state=error shows those states for the page.
 
 import { ApiError, get, isAbort, onWrite } from "./api.js";
 import { markChanges, snapshotMarks } from "./components/marker.js";
@@ -24,7 +24,7 @@ import { $, $$, mount, reducedMotion } from "./dom.js";
 import { initLang, storedLang, t } from "./i18n.js";
 import { initTimeline } from "./replay/timeline.js";
 import { mountShell, observeTitle, pageHead } from "./shell.js";
-import { closePane, getState, initState, isDefaultPane, subscribe } from "./state.js";
+import { closePane, getState, initState, isDefaultPane, presetLang, subscribe } from "./state.js";
 import * as brief from "./views/brief.js";
 import * as caseFile from "./views/case.js";
 import * as order from "./views/order.js";
@@ -40,9 +40,16 @@ let paneRun = null;
 let lastFocused = null; // see restoreFocus()
 document.addEventListener("focusin", (event) => (lastFocused = event.target));
 
+// The skip link moves focus without touching the hash, which holds the app state
+$(".skip").addEventListener("click", (event) => {
+  event.preventDefault();
+  $("#main").focus();
+});
+
 boot();
 
 async function boot() {
+  presetLang(storedLang());
   const root = $("#view");
   mount(root, loadingState(t("shell.loading")));
   let meta;
@@ -101,6 +108,8 @@ async function renderPage(state, prev) {
     crossfade(root);
   }
   restoreFocus(root, focusId);
+  // a link to another page took its control away with the old page: start on the new page's title
+  if (first && prev && document.activeElement === document.body) $("#view-title", root)?.focus({ preventScroll: true });
   observeTitle(root);
   markSelection(getState());
 }
@@ -147,7 +156,7 @@ async function runView(view, root, ctx) {
   }
 }
 
-/** ?state=loading | error: the page's loading or error state, to look at them (DESIGN §3). */
+/** ?state=loading | error: the page's loading or error state, to look at them. */
 const DEMO_STATES = ["loading", "error"];
 const demoState = (kind) =>
   kind === "loading"

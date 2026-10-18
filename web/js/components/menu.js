@@ -88,7 +88,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     buttons[(move + buttons.length) % buttons.length].focus();
   } else if (event.key === "Tab") {
-    closeMenu(false);
+    closeMenu(); // focus is back on the pill before the browser moves it, so Tab continues from there
   }
 });
 

@@ -1,7 +1,7 @@
 # web/
 
 The UI: plain HTML, CSS and ES modules, served as static files by the FastAPI app at `/`. No build step, no
-framework, no third-party requests. Design spec: `design/DESIGN.md`; API: `CONTRACTS.md`.
+framework, no third-party requests. The API it reads: [`CONTRACTS.md`](../CONTRACTS.md).
 
 ## How it fits together
 

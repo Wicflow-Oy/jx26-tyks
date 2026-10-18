@@ -10,7 +10,7 @@ import { dateDay, dateLong } from "../format.js";
 import { t } from "../i18n.js";
 import { labels } from "../names.js";
 import { pageHead } from "../shell.js";
-import { selectDefaultPane } from "../state.js";
+import { isDefaultPane, selectDefaultPane } from "../state.js";
 import { dataQuality } from "./brief/data-quality.js";
 import { countCapsules, dek } from "./brief/dek.js";
 import { loadBriefPage } from "./brief/model.js";
@@ -52,8 +52,9 @@ export async function render(root, ctx) {
       lagDays: meta.result_lag_days,
     }),
     dataQuality(brief, meta.wards ?? []),
-    wardMap(brief),
+    wardMap(brief, filters),
     h("footer", { class: "foot" }, h("span", null, brief.footer), h("span", null, t("shell.prototype"))),
   );
-  if (first && page.hero && paneBeside()) selectDefaultPane("case", page.hero.id);
+  // the default selection follows each replay week until someone opens or closes a pane
+  if (page.hero && paneBeside() && (first || isDefaultPane())) selectDefaultPane("case", page.hero.id);
 }

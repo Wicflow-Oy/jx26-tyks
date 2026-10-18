@@ -1,4 +1,4 @@
-/* Design tokens (DESIGN.md §1). The only place colour, type, space, radius, shadow and motion are defined.
+/* Design tokens. The only place colour, type, space, radius, shadow and motion are defined.
    A dark theme later overrides these names; it never adds new ones. */
 :root {
   /* neutrals */

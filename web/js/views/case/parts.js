@@ -46,7 +46,7 @@ export const notes = (entries) =>
     entries.filter((entry) => entry?.[1]).map(([label, text]) => h("p", null, h("b", null, `${label}.`), " ", text)),
   );
 
-/** Below this many results a share is not shown as a percent, only as "x of n" (DESIGN §16, not enough data). */
+/** Below this many results a share is not shown as a percent, only as "x of n". */
 export const MIN_N_FOR_SHARE = 10;
 
 /**

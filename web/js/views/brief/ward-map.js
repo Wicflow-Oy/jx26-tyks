@@ -9,6 +9,7 @@ import { h } from "../../dom.js";
 import { capitalize, int, word } from "../../format.js";
 import { t } from "../../i18n.js";
 import { briefItems, byPriority, isOpen, PRIORITIES, unitStatus } from "../../signals.js";
+import { areaName } from "../../names.js";
 import { openPane } from "../../state.js";
 import { completeness, quietUnits } from "./model.js";
 
@@ -18,7 +19,7 @@ const AREA_ORDER = Object.keys(CROSS);
 const inReadingOrder = (a, b) => rank(a.area) - rank(b.area);
 const rank = (area) => (AREA_ORDER.includes(area) ? AREA_ORDER.indexOf(area) : AREA_ORDER.length);
 
-export function wardMap(brief) {
+export function wardMap(brief, filters) {
   const quiet = quietUnits(brief);
   const units = brief.map?.units ?? [];
   const areas = [...(brief.map?.home_areas ?? [])].sort(inReadingOrder);
@@ -54,11 +55,12 @@ export function wardMap(brief) {
             "cross",
             areas.map((area) => {
               const [row, column] = CROSS[area.area] ?? [];
-              const label = t("brief.map.area", { area: area.area });
+              const name = areaName(area.area, filters);
+              const label = t("brief.map.area", { area: name });
               return h(
                 "div",
                 { style: row ? { "grid-row": row, "grid-column": column } : null },
-                unitTile(brief, area, label, area.area),
+                unitTile(brief, area, label, area.area, name),
               );
             }),
           ),
@@ -84,8 +86,8 @@ export function wardMap(brief) {
 const mapBlock = (title, kind, tiles) =>
   h("div", { class: "mapblk" }, h("h3", { class: "eyebrow" }, title), h("div", { class: kind }, tiles));
 
-/** One tile: lit for a signal or a change, hatched for a data gap, flat when quiet. */
-function unitTile(brief, unit, label, code) {
+/** One tile: lit for a signal or a change, hatched for a data gap, flat when quiet. It shows `shown` (the code). */
+function unitTile(brief, unit, label, code, shown = code) {
   const status = unitStatus(brief, unit);
   const ids = unit.signal_ids ?? [];
   const lit = unit.state === "signal" || unit.state === "changed";
@@ -108,7 +110,7 @@ function unitTile(brief, unit, label, code) {
     h(
       "span",
       { class: "u-top" },
-      h("span", { class: "u-code" }, code),
+      h("span", { class: "u-code" }, shown),
       status.glyph && status.glyph !== "gap" && tile(status.glyph, "xs"),
     ),
     h("span", { class: "u-state" }, status.word),

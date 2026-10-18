@@ -5,7 +5,7 @@
 import { intervalBar } from "../../components/interval-bar.js";
 import { unitBars } from "../../components/unit-bars.js";
 import { h } from "../../dom.js";
-import { dateFull, dateShort, int, pct, xOfN } from "../../format.js";
+import { dateFull, dateShort, int, pct, significant, xOfN } from "../../format.js";
 import { t } from "../../i18n.js";
 import { rich } from "../../text.js";
 import { clusterEvidence } from "./cluster-evidence.js";
@@ -65,7 +65,7 @@ function changeCounts(item) {
   return [
     t("case.note.counts"),
     t("case.change.expected", {
-      expected: c.expected_resistant,
+      expected: significant(c.expected_resistant, 2),
       weeks: int(item.slots?.prior_weeks),
       hospital: xOfN(c.hospital_prior_resistant, c.hospital_prior_tested),
     }),
