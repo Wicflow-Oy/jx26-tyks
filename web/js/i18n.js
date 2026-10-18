@@ -1,8 +1,7 @@
 // UI strings, deliberately simple: one hook, t(key). Each area module in js/strings/ exports { en, fi } and its
-// keys are read as "area.key", e.g. t("shell.role.ic"). A key missing in Finnish falls back to English, so a
-// half-reviewed table still works. The language itself is state.lang (in the URL hash), remembered in localStorage;
-// the API gets it as ?lang=. Dates, numbers and <html lang> follow the language the UI's own words are in, so
-// while the Finnish tables are empty an English sentence never carries a Finnish date.
+// keys are read as "area.key", e.g. t("shell.role.ic"). A key missing in Finnish falls back to English. The language
+// itself is state.lang (in the URL hash), remembered in localStorage; the API gets it as ?lang=, and dates, numbers
+// (format.js) and <html lang> follow it.
 
 import { getState, subscribe } from "./state.js";
 import * as brief from "./strings/brief.js";
@@ -30,11 +29,8 @@ export function t(key, vars) {
   return typeof value === "string" && vars ? value.replace(/\{(\w+)\}/g, (m, name) => String(vars[name] ?? m)) : value;
 }
 
-/** The chosen language (state.lang), passed to the API. */
+/** The chosen language (state.lang): "en" or "fi". */
 export const getLang = () => getState().lang;
-
-/** The language of the UI's own words: the chosen one once its table has strings, else English. */
-export const textLang = () => (Object.keys(tables[getLang()] ?? {}).length ? getLang() : "en");
 
 /** Keeps <html lang> and the stored preference in step with state.lang. Call once, after initState(). */
 export function initLang() {
@@ -43,7 +39,7 @@ export function initLang() {
 }
 
 function applyLang(lang) {
-  document.documentElement.lang = textLang();
+  document.documentElement.lang = lang;
   try {
     localStorage.setItem(STORAGE_KEY, lang);
   } catch {

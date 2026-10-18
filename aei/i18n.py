@@ -39,7 +39,7 @@ DRUG_NAMES = {
     "Vancomycin": ("Vankomysiini", "vankomysiinille"),
     "Clindamycin": ("Klindamysiini", "klindamysiinille"),
     "Pivmecillinam": ("Pivmesillinaami", "pivmesillinaamille"),
-    "Flucloxacillin": ("Fluklokasilliini", "fluklokasilliinille"),
+    "Flucloxacillin": ("Flukloksasilliini", "flukloksasilliinille"),
 }
 _ORGANISMS = sorted({o for table in (C.INTRINSIC, C.NO_BREAKPOINT) for o in table})
 
@@ -143,7 +143,7 @@ LABELS = _drug_labels() | {
         "Päivämäärät ovat näytteenottopäiviä; tulokset valmistuvat yleensä muutaman päivän kuluttua."
     ),
     "Every number links to its count and filter. Text narrated from computed numbers only.": (
-        "Jokainen luku linkittyy laskentaansa ja suodattimeensa. Tekstit on muodostettu vain lasketuista luvuista."
+        "Jokainen luku on linkki laskentaansa ja suodattimeensa. Tekstit on muodostettu vain lasketuista luvuista."
     ),
     "Typing advised": "Tyypitystä suositellaan",
     "Lab check": "Laboratorion tarkistus",
@@ -170,8 +170,8 @@ LABELS = _drug_labels() | {
         "(spa-tyypitys); tarkista osastojaksojen päällekkäisyys."
     ),
     "Contact precautions; screen exposed patients (same room or unit); check the past year on the unit.": (
-        "Kosketusvarotoimet; altistuneiden potilaiden seulonta (sama huone tai yksikkö); tarkista yksikön edellinen "
-        "vuosi."
+        "Kosketusvarotoimet; altistuneiden potilaiden seulonta (sama huone tai yksikkö); tarkista yksikön edellisen "
+        "vuoden löydökset."
     ),
     (
         "Standard precautions; contact precautions by risk assessment; epidemic check: same antibiogram? same room or "
@@ -243,8 +243,8 @@ LABELS = _drug_labels() | {
     "plausible": "uskottava",
     "possible": "mahdollinen",
     "unlikely": "epäuskottava",
-    "check": "tarkista",
-    "contributes (index imported?)": "vaikuttaa (ensimmäinen tuotu?)",
+    "check": "tarkistettava",
+    "contributes (index imported?)": "osatekijä (indeksitapaus tuotu?)",
     # policy lines (config.POLICY_LINES)
     "Trimethoprim for uncomplicated UTI in women": "Trimetopriimi naisten komplisoitumattomaan virtsatieinfektioon",
     "Review the empirical UTI guidance": "Tarkista virtsatieinfektion empiirisen hoidon ohje",
@@ -336,16 +336,16 @@ LABELS = _drug_labels() | {
         "When an antibiotic is selected, flags it with passive information from approved infection-control alerts, "
         "local lines and the unit's observed counts. Never interrupts at selection and never names another drug."
     ): (
-        "Kun antibiootti valitaan, siitä näytetään huomaamaton tieto hyväksytyistä infektioiden torjunnan "
-        "hälytyksistä, paikallisista rajoista ja yksikön havaituista lukumääristä. Ei keskeytä valintaa eikä koskaan "
-        "nimeä toista lääkettä."
+        "Kun antibiootti valitaan, liittää siihen taustatiedon hyväksytyistä infektioiden torjunnan hälytyksistä, "
+        "paikallisista rajoista ja yksikön havaituista lukumääristä. Ei koskaan keskeytä valintaa eikä nimeä toista "
+        "lääkettä."
     ),
     (
         "Before an antibiotic order is signed, asks once when an approved alert applies to this unit and drug, or the "
         "patient's own recent isolate had acquired resistance to it. The doctor decides."
     ): (
         "Ennen antibioottimääräyksen allekirjoitusta kysyy kerran, jos hyväksytty hälytys koskee tätä yksikköä ja "
-        "lääkettä tai potilaan oma tuore isolaatti on hankkinut resistenssin sille. Lääkäri päättää."
+        "lääkettä tai potilaan omassa tuoreessa isolaatissa oli hankinnainen resistenssi sille. Lääkäri päättää."
     ),
     # the demo seeds' alert messages (config.DEMO_ALERT_SEEDS), as infection control would write them in Finnish
     (

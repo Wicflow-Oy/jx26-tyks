@@ -1,8 +1,8 @@
-// Formatting for dates, shares and counts, in the language of the UI's words (i18n.textLang).
+// Formatting for dates, shares and counts, in the chosen language (i18n.getLang).
 // English: "Sun 29 Mar 2026", "29 Mar", "20.4%". Finnish: "su 29.3.2026", "29.3.", "20,4 %".
 
 import { parseISO } from "./dates.js";
-import { t, textLang } from "./i18n.js";
+import { getLang, t } from "./i18n.js";
 
 const NBSP = " ";
 const NAMES = {
@@ -44,8 +44,8 @@ const NAMES = {
   },
 };
 
-const fi = () => textLang() === "fi";
-const names = () => NAMES[textLang()] ?? NAMES.en;
+const fi = () => getLang() === "fi";
+const names = () => NAMES[getLang()] ?? NAMES.en;
 
 function parts(iso) {
   const d = parseISO(iso);
@@ -123,7 +123,7 @@ export function word(n) {
   return Array.isArray(words) && n >= 0 && n < words.length ? words[n] : int(n);
 }
 
-export const capitalize = (text) => text.charAt(0).toLocaleUpperCase(textLang()) + text.slice(1);
+export const capitalize = (text) => text.charAt(0).toLocaleUpperCase(getLang()) + text.slice(1);
 
 /** Percent value of a share, rounded half up. The exponent shift keeps 0.145 as 14.5 (0.145 * 100 is 14.499…). */
 function halfUp(share, places) {

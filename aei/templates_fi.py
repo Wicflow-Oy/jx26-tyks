@@ -72,8 +72,8 @@ FI = {
     "ob_thl_cluster_mixed": {
         "text": (
             "{ward}, {organism_label}: {n_patients:int} potilasta {first_date:short_date} "
-            "alkaen; tavallisesti {usual_low:int}–{usual_high:int} samassa ajassa. Vaihteleva: "
-            "{n_profiles:int} eri herkkyysprofiilia, sääntöjemme mukaan alempi prioriteetti "
+            "alkaen; tavallisesti {usual_low:int}–{usual_high:int} samassa ajassa. Herkkyysprofiilit "
+            "vaihtelevat: {n_profiles:int} eri profiilia, sääntöjemme mukaan alempi prioriteetti "
             "(todellinen tilanne tuntematon). " + _THL_CHECK
         ),
         "title": "{ward}, {organism_label}: potilaita tavallista enemmän",
@@ -81,10 +81,10 @@ FI = {
     "ob_thl_cluster_resolved": {
         "text": (
             "{ward}, {organism_label}: {n_patients:int} potilasta {first_date:short_date} "
-            "alkaen. " + _RESOLVED + "; viimeksi tavanomaista tasoa enemmän "
+            "alkaen. " + _RESOLVED + "; viimeksi yli tavanomaisen tason "
             "{last_alert:short_date}"
         ),
-        "title": "{ward}, {organism_label}: potilaita tavanomaista enemmän, päättynyt",
+        "title": "{ward}, {organism_label}: potilaita tavallista enemmän, päättynyt",
     },
     "ob_stepup": {
         "text": (
@@ -204,7 +204,7 @@ FI = {
         "title": "Yksiköt ilman signaaleja",
     },
     "trend_quiet_none": {
-        "text": "Kaikissa yksiköissä on tällä viikolla kohteita ({n_units:int} yksikköä).",
+        "text": "Kaikissa yksiköissä on tällä viikolla signaaleja ({n_units:int} yksikköä).",
         "title": "Ei yksiköitä ilman signaaleja",
     },
     # templates_ui.py: the order layer and its CDS cards
@@ -293,8 +293,7 @@ FI = {
     "cds_chip_quiet": {"text": "Ei voimassa olevia hälytyksiä · {unit} · data {as_of:short_date} asti"},
     "cds_rule_own_history": {
         "text": (
-            "potilaan omassa isolaatissa viimeisten {weeks:int} viikon ajalta on hankinnainen resistenssi tälle "
-            "lääkkeelle"
+            "potilaan omassa isolaatissa (viimeiset {weeks:int} viikkoa) oli hankinnainen resistenssi tälle lääkkeelle"
         )
     },
     "cds_rule_not_enough": {
@@ -314,7 +313,7 @@ FI = {
     "ward_footer": {"text": "In vitro -kattavuus: {where}. Ei lääkemääräys; paikallinen hoito-ohje ensin."},
     "ward_not_shown__urine_only": {"text": "{drug}: ei näytetä; vain virtsanäytteille"},
     "ward_not_shown__not_for_urine": {
-        "text": "{drug}: ei näytetä virtsanäytteille; ei virtsatieinfektion empiirinen hoito"
+        "text": "{drug}: ei näytetä virtsanäytteille; ei virtsatieinfektion empiiriseen hoitoon"
     },
     "ward_not_shown__screening_only": {"text": "{drug}: ei näytetä; MRSA-seulontatesti, ei hoitovaihtoehto"},
     "ward_not_shown__species": {"text": "{drug}: ei näytetä; {clauses}"},
@@ -436,7 +435,8 @@ def _elsewhere(k: int) -> str:
 
 
 def _background(lead: str) -> dict:
-    had = lead + " tämä herkkyysprofiili oli {bg:xofn} potilaalla, joilla on {bg_label}"
+    """lead is the start of the sentence up to its verb: "Ennen tätä rypästä tämä herkkyysprofiili oli"."""
+    had = lead + " {bg:xofn} potilaalla, joilla on {bg_label}"
     out = {"few": had + ": liian vähän tapauksia yleisyyden arvioimiseen."}
     for n in ("low_n", "ok"):
         out[f"weak_{n}"] = had + _pct(n, "pct1") + ", joten vastaavuus on heikko näyttö."
@@ -456,7 +456,7 @@ def _seen_title(same: str, k: int) -> str:
 
 for _s, _st in _SAME.items():
     for _k in range(len(C.WARD_LABELS)):
-        for _e, _bt in _background("Ennen tätä rypästä").items():
+        for _e, _bt in _background("Ennen tätä rypästä tämä herkkyysprofiili oli").items():
             FI[f"ob_seen_before__{_s}__{_k}__{_e}"] = {
                 "text": (
                     "{ward}, {organism_label}, herkkyysprofiili ({pattern}): "
@@ -469,11 +469,11 @@ for _s, _st in _SAME.items():
                 ),
                 "title": _seen_title(_s, _k),
             }
-for _e, _bt in _background("Tähän mennessä").items():
+for _e, _bt in _background("Tähän mennessä tämä herkkyysprofiili on ollut").items():
     FI[f"ob_seen_before_return__{_e}"] = {
         "text": (
             "{ward}, {organism_label}, herkkyysprofiili ({pattern}) on palannut yksikköön {ward}: viimeisin näyte "
-            "{return_date:short_date}; potilaat {cluster_first_date:date} alkaneen ryppään jälkeen: {n_return:int}. "
+            "{return_date:short_date}; potilaita {cluster_first_date:date} alkaneen ryppään jälkeen: {n_return:int}. "
             + _bt
             + " Profiilivastaavuus, ei tyypitys; tyypitystä suositellaan."
         ),

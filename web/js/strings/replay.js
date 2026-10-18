@@ -21,4 +21,23 @@ export const en = {
 };
 
 /** @type {Partial<typeof en>} */
-export const fi = {};
+export const fi = {
+  label: "Aikajana",
+  rangeLabel:
+    "Tilanneviikko. Nuolinäppäimet siirtävät viikon kerrallaan; Home ja End siirtävät ensimmäiseen ja uusimpaan viikkoon.",
+  "valueText.counts": "{date}: P1 {P1}, P2 {P2}, P3 {P3}, tiedoksi {info}",
+  "valueText.totals": "{date}: P1 {p1}, signaaleja {n}",
+  play: "Toista {month}",
+  playAria: "Toista {month} viikko kerrallaan",
+  pause: "Pysäytä",
+  latest: "Uusin",
+  latestAria: "Takaisin uusimpaan viikkoon, {date}",
+  atLatest: "Uusin data · päivitetään öisin",
+  weekBack: "1 viikko taaksepäin",
+  weeksBack: "{n} viikkoa taaksepäin",
+  sheetEyebrow: "Aikajana · viikko kerrallaan",
+  read: "P1 {p1} · signaaleja {n}",
+  sheetSub: "Maanantaikatsaus {date}. Myöhemmin otettuja näytteitä ei käytetä.",
+  tourStart: "Esittely",
+  tourStartAria: "Esittelyn alku, {date}",
+};

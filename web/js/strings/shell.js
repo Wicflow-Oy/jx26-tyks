@@ -1,5 +1,4 @@
 // Shell strings: the frame, shared components, formats and error messages. Read as t("shell.<key>").
-// Finnish is written by a reviewer later; a missing Finnish key shows the English one.
 
 export const en = {
   skip: "Skip to content",
@@ -130,4 +129,116 @@ export const en = {
 };
 
 /** @type {Partial<typeof en>} */
-export const fi = {};
+export const fi = {
+  skip: "Siirry sisältöön",
+  prototype: "Prototyyppi · synteettinen data",
+  sections: "Osiot",
+  loading: "Ladataan",
+  close: "Sulje",
+  tour: "Aloita esittely",
+
+  "role.label": "Rooli",
+  "role.ic": "Infektioiden torjunta",
+  "role.doc": "Osastolääkäri",
+  "lang.label": "Kieli",
+
+  asOf: "Tilanne",
+  "step.group": "Siirry viikko kerrallaan",
+  "step.prev": "Edellinen viikko",
+  "step.next": "Seuraava viikko",
+  "status.latest": "Data {date} asti · päivitetään öisin",
+  "status.replay": "Aikajana · data {date} asti",
+  sampleDates: "näytteenottopäivät; tulokset noin {days} päivää myöhemmin",
+
+  "side.brief": "Katsaus",
+  "side.alerts": "Hyväksytyt hälytykset",
+  "side.drafts": "Tiedoteluonnokset",
+  "side.units": "Yksiköt tällä viikolla",
+  "side.doctor": "Osastolääkäri",
+  "side.onWard": "{ward} tällä viikolla",
+  "side.noSignals": "Ei avoimia signaaleja tässä yksikössä.",
+  "side.until": "{date} asti",
+  "side.expired": "päättyi {date}",
+  "side.draft": "Luonnos",
+  "side.notSent": "Ei lähetetty",
+  "side.noAlerts": "Ei hyväksyttyjä hälytyksiä tällä viikolla.",
+  "side.noDrafts": "Ei vielä tiedoteluonnoksia.",
+  "nav.brief": "Maanantaikatsaus",
+  "nav.replay": "Aikajana",
+  "nav.ward": "Oma osasto",
+  "nav.trend": "Kehitys",
+  "nav.trendOf": "Kehitys · {drug}",
+  "nav.order": "Lääkemääräys",
+
+  tabs: "Välilehdet",
+  "tab.brief": "Katsaus",
+  "tab.wards": "Yksiköt",
+  "tab.replay": "Aikajana",
+  "tab.ward": "Oma osasto",
+  "tab.trend": "Kehitys",
+  "tab.order": "Määräys",
+
+  "pane.case": "Tapauksen tiedot",
+  "pane.trend": "Kehitys",
+  "back.brief": "Katsaus",
+  "back.ward": "Oma osasto",
+  "back.order": "Lääkemääräys",
+
+  "priority.P1": "P1",
+  "priority.P2": "P2",
+  "priority.P3": "P3",
+  "priority.info": "Tiedoksi",
+  "priority.ok": "Kunnossa",
+  "priority.gap": "Aukko datassa",
+  "priority.line": "Raja",
+  "status.new": "Uusi",
+  "status.ongoing": "Jatkuu",
+  "status.resolved": "Päättynyt",
+  "sr.R": "resistentti",
+  "sr.S": "herkkä",
+
+  "unit.signal": "Signaali",
+  "unit.info": "Tiedoksi",
+  "unit.changed": "Muuttunut",
+  "unit.gap": "Aukko datassa",
+  "unit.quiet": "Ennallaan",
+  "unit.count": "avoimia {n}",
+
+  "title.cluster": "Mahdollinen rypäs ({organism})",
+  "title.clusterHero": "{ward}: mahdollinen rypäs ({organism})",
+  "title.pattern": "Herkkyysprofiili ({organism})",
+  "kind.phenotype_cluster": "Poikkeava löydöskuvio",
+  "kind.thl_rule": "THL:n ohje",
+  "kind.count_stepup": "Tapausmäärän nousu",
+  "kind.ward_outlier": "Yksikkövertailu",
+  "kind.resistance_change": "Resistenssin muutos",
+  "kind.policy_line": "Paikallinen raja",
+  "kind.seen_before": "Nähty aiemmin",
+  "kind.expert_rule": "Laboratorion tarkistus",
+  "kind.completeness": "Datan kattavuus",
+  "kind.quiet": "Yksiköt ilman signaaleja",
+  "kind.other": "Signaali",
+
+  "toast.unitQuiet": "{unit}: ei avoimia signaaleja tällä viikolla.",
+
+  "announce.brief": "Maanantaikatsaus {date}: P1 {P1}, P2 {P2}, P3 {P3}, tiedoksi {info}.",
+  "announce.week": "Data {date} asti.",
+  "announce.ward": "Oma osasto, data {date} asti.",
+
+  "format.xOfN": "{x}/{n}",
+  // Finnish running text keeps counts as digits, like the backend's own Finnish
+  "format.numberWords": [],
+
+  "error.boot": "Sovellus ei käynnistynyt.",
+  "error.view": "Näkymä ei latautunut.",
+  "error.retry": "Yritä uudelleen",
+  "error.unchanged": "Mitään ei muutettu.",
+  "error.network": "Palvelin ei vastannut. Tarkista yhteys ja yritä uudelleen.",
+  "error.timeout": "Palvelin vastasi liian hitaasti. Yritä hetken kuluttua uudelleen.",
+  "error.rate_limited": "Liikaa pyyntöjä tästä osoitteesta. Odota minuutti ja yritä uudelleen.",
+  "error.write_limit": "Tähän demoistuntoon on tallennettu niin monta muutosta kuin mahdollista.",
+  "error.not_found": "Kohdetta ei ole tämän viikon datassa.",
+  "error.bad_request": "Pyyntöä ei voitu käsitellä tällä datalla. Kokeile toista viikkoa tai muita suodattimia.",
+  "error.server": "Palvelimella tapahtui virhe. Yritä uudelleen.",
+  "error.unavailable": "Data ei ole juuri nyt saatavilla palvelimella. Yritä hetken kuluttua uudelleen.",
+};

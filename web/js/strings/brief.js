@@ -77,4 +77,77 @@ export const en = {
 };
 
 /** @type {Partial<typeof en>} */
-export const fi = {};
+export const fi = {
+  title: "Maanantaikatsaus",
+  dataTo: "data {date} asti",
+  loading: "Ladataan katsausta",
+  error: "Katsaus {date} ei latautunut.",
+
+  "dek.unusual.one": "{n} poikkeava löydöskuvio",
+  "dek.unusual.other": "{n} poikkeavaa löydöskuviota",
+  "dek.changed.one": "{n} muutos",
+  "dek.changed.other": "{n} muutosta",
+  "dek.policy.one": "{n} paikallinen raja ylitetty",
+  "dek.policy.other": "{n} paikallista rajaa ylitetty",
+  "dek.seenBefore.one": "{n} aiempi profiilivastaavuus",
+  "dek.seenBefore.other": "{n} aiempaa profiilivastaavuutta",
+  "dek.gap.one": "{n} aukko datassa",
+  "dek.gap.other": "{n} aukkoa datassa",
+  "dek.lab.one": "{n} laboratorion tarkistus",
+  "dek.lab.other": "{n} laboratorion tarkistusta",
+  "dek.and": "ja",
+  "dek.none": "Ei avoimia signaaleja tällä viikolla.",
+  "dek.quiet": "Ei signaaleja {quiet}/{units} yksikössä.",
+
+  "counts.label": "Signaalit prioriteetin mukaan",
+  "counts.units": "Signaaleja {n}/{units} yksikössä",
+
+  "section.unusual_patterns": "Poikkeavat löydöskuviot",
+  "section.changed": "Mitä muuttui",
+  "section.policy": "Paikalliset rajat",
+  "section.seen_before": "Nähty aiemmin",
+  "section.data_quality": "Datan laatu",
+
+  "foot.unusual_patterns":
+    "Mahdolliset ryppäät saman herkkyysprofiilin perusteella sekä THL:n ohjeen mukaiset löydökset (CPE, VRE; ESBL ja MRSA samassa yksikössä).",
+  "foot.changed": "Kunkin yksikön tuore resistenssi verrattuna sen omiin aiempiin tuloksiin.",
+  "foot.policy": "Infektioiden torjunnan ja mikrobilääkehoidon ohjauksen asettamat rajat.",
+  "foot.seen_before": "Aiemmat potilaat, joilla on täsmälleen sama herkkyysprofiili. Profiilivastaavuus, ei tyypitys.",
+  "foot.data_quality":
+    "Vastattujen S/R-tulosten fenotyyppitarkistukset sekä yksiköt, joilta tuli tavallista vähemmän dataa.",
+
+  "empty.unusual_patterns": "Ei poikkeavia löydöskuvioita tällä viikolla.",
+  "empty.changed": "Ei poikkeamia tavanomaisesta vaihteluvälistä tällä viikolla.",
+  "empty.policy": "Mikään paikallinen raja ei ylity tällä viikolla.",
+  "empty.seen_before": "Ei aiempia vastaavuuksia tällä viikolla.",
+  "empty.data_quality": "Ei laboratorion tarkistuksia tällä viikolla.",
+
+  "hero.open": "Tapauksen tiedot",
+  "hero.patients": "{n} potilasta",
+  "hero.usual": "tavallisesti {range} vuodessa",
+  "hero.share": "{counts} potilaalla sama herkkyysprofiili",
+  "hero.noAlert": "Ei voimassa olevaa hälytystä",
+  "hero.alertActive": "Infektioiden torjunta hyväksyi hälytyksen {approved}, voimassa {until} asti",
+  "hero.alertExpired": "Hälytys hyväksytty {approved}, päättyi {until}",
+
+  "policy.rate": "Resistenttien osuus {rate} ({counts}, viimeiset {weeks} viikkoa).",
+  "policy.threshold": "Raja on {threshold}.",
+  "policy.prior": "Sama jakso vuotta aiemmin: {rate} ({counts}).",
+  "policy.spoken": "resistenttien osuus {rate}, {counts}, viimeiset {weeks} viikkoa; raja on {threshold}",
+  "policy.lineLabel": "{threshold}:n raja",
+  "policy.above": "Yli rajan",
+  "policy.below": "Alle rajan",
+
+  cultures: "Viljelyt tällä viikolla yksiköittäin",
+
+  "map.title": "Ilman signaaleja",
+  "map.count": "{quiet}/{units}",
+  "map.schematic": "Kaavio, ei pohjapiirros",
+  "map.units": "Sairaalan yksiköt",
+  "map.areas": "Kotialueet · perusterveydenhuolto",
+  "map.area": "Kotialue {area}",
+  "map.meaning":
+    "Ilman signaaleja: yksiköllä ei ole tällä viikolla avoimia signaaleja. Resistenssiä voi silti esiintyä.",
+  "map.legend": "Selite",
+  "map.gap": "Aukko datassa, syy tuntematon",
+};
