@@ -356,7 +356,7 @@ def test_heads_up_is_drafted_approved_and_never_sent(client):
     assert (draft["status"], draft["audience"], draft["delivery"]) == ("draft", "ed", store.NOT_SENT)
     assert draft["validated"] is True and draft["text"] == (
         "Heads-up from infection control: possible MRSA cluster on Intensive care unit (ICU). 13 patients since 3 Mar; "
-        "12 of 13 share one antibiogram: cefoxitin R, vancomycin S, clindamycin R. Under investigation; typing "
+        "12 of 13 share the same antibiogram: cefoxitin R, vancomycin S, clindamycin R. Under investigation; typing "
         "advised. Dates are sample dates."
     )  # drug names, never panel codes such as FOX:R
     approved = client.post(f"/api/heads-up/{draft['id']}/approve").json()

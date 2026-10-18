@@ -51,7 +51,7 @@ TEMPLATES = {
     "ob_thl_cluster_same": {
         "text": (
             "{ward}: {n_patients:int} {organism_label} patients since {first_date:short_date}; usually "
-            "{usual_low:int}–{usual_high:int} in that time. {n_share:int} of {n_patients:int} share one antibiogram "
+            "{usual_low:int}–{usual_high:int} in that time. {n_share:int} of {n_patients:int} share the same antibiogram "
             "({pattern}). THL guidance: epidemic check (several findings above the usual level on one unit). Typing "
             "advised."
         ),
@@ -138,7 +138,7 @@ for _n in N_STATES:
     TEMPLATES[f"ob_phenotype_marker__{_n}"] = {
         "text": (
             "{ward}: unusual pattern. {organism_label} in {n_patients:int} patients since {first_date:short_date}; "
-            "{n_share:int} of {n_patients:int} share one antibiogram ({pattern}). "
+            "{n_share:int} of {n_patients:int} share the same antibiogram ({pattern}). "
             + _EXPECTED
             + "In the year before, {bg:xofn} {bg_label} patients hospital-wide had this antibiogram"
             + _pct(_n, "pct0")
@@ -149,7 +149,7 @@ for _n in N_STATES:
     TEMPLATES[f"ob_phenotype_plain__{_n}"] = {
         "text": (
             "{ward}: unusual pattern. {organism_label} in {n_patients:int} patients since {first_date:short_date} with "
-            "near-identical antibiograms; {n_share:int} of {n_patients:int} share one ({pattern}). "
+            "near-identical antibiograms; {n_share:int} of {n_patients:int} share the same exact antibiogram ({pattern}). "
             + _EXPECTED
             + "In the year before, {bg:xofn} {bg_label} isolates with the same tests hospital-wide had this "
             "antibiogram" + _pct(_n, "pct1") + ". Typing advised."

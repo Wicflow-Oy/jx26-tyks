@@ -97,7 +97,7 @@ def test_icu_mrsa_cluster_counts_by_as_of(ds, as_of, n_patients, n_share):
     assert s["first_sample_date"] == "2026-03-03" and s["organism"] == "Staphylococcus aureus"
     assert s["priority"] == "P1" and s["advice"] == "Typing advised"
     assert s["evidence"]["filter"]["marker"] == "mrsa"
-    assert f"{n_share} of {n_patients} share one antibiogram ({ICU_PATTERN})" in s["text"]
+    assert f"{n_share} of {n_patients} share the same antibiogram ({ICU_PATTERN})" in s["text"]
 
 
 def test_icu_mrsa_cluster_first_alert_is_7_march(ds):

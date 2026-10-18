@@ -19,7 +19,7 @@ TEMPLATES = {
     "ed_cluster": {
         "text": (
             "Heads-up from infection control: possible {organism_label} cluster on {ward_label} ({ward}). "
-            "{n_patients:int} patients since {first_date:short_date}; {n_share:int} of {n_patients:int} share one "
+            "{n_patients:int} patients since {first_date:short_date}; {n_share:int} of {n_patients:int} share the same "
             "antibiogram: {pattern}. Under investigation; typing advised. Dates are sample dates."
         )
     },

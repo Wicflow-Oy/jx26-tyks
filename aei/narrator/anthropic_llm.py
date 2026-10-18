@@ -36,7 +36,7 @@ from .guard import GUARD, Guard
 
 log = logging.getLogger(__name__)
 
-PROMPT_VERSION = "narrator-1"  # part of the replay cache key: change it whenever SYSTEM_PROMPT or user_prompt changes
+PROMPT_VERSION = "narrator-2"  # part of the replay cache key: change it whenever SYSTEM_PROMPT or user_prompt changes
 DEFAULT_MODEL = "claude-haiku-5-5"
 BACKENDS = ("anthropic", "bedrock", "vertex")
 MAX_TOKENS = 4096  # adaptive thinking (on by default on Haiku 5.5) counts toward this; a skeleton is ~100 tokens

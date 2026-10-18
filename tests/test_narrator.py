@@ -160,7 +160,7 @@ def test_ed_heads_up_uses_drug_names_built_from_slots():
     n = TemplateNarrator().narrate(template_id, slots, audience="ed")
     assert n.validated and n.text == (
         "Heads-up from infection control: possible ESBL E. coli cluster on Urology (URO). 6 patients since 30 May; 6 "
-        "of 6 share one antibiogram: ampicillin R, cefuroxime R, ceftriaxone R, meropenem S. Under investigation; "
+        "of 6 share the same antibiogram: ampicillin R, cefuroxime R, ceftriaxone R, meropenem S. Under investigation; "
         "typing advised. Dates are sample dates."
     )
     case = {
