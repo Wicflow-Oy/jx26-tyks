@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Strainwatch · technical execution</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0b2545; --navy-2: #13315c; --accent: #0066cc; --accent-wash: #e6f0fb;
+    --ink: #1d1d1f; --ink-2: #5f5f64; --line: rgba(0,0,0,.09); --bg: #f5f5f7; --surface: #fff;
+    --p1: #c62828;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 Inter, system-ui, -apple-system, sans-serif; color: var(--ink); background: var(--bg); }
+  main { max-width: 1180px; margin: 0 auto; padding: 24px 24px 40px; }
+  h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); margin: 36px 0 12px; font-weight: 600; }
+  .hero { background: radial-gradient(1200px 500px at 85% -10%, #1f4f8f 0%, transparent 60%), linear-gradient(160deg, var(--navy), var(--navy-2)); color: #fff; border-radius: 22px; padding: 44px 48px 40px; }
+  .eyebrow { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: #a9c4ea; font-weight: 600; }
+  .thesis { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-size: 64px; line-height: 1.04; margin: 16px 0 18px; letter-spacing: -.01em; }
+  .hero p { max-width: 820px; color: #dbe6f5; font-size: 17px; margin: 0 0 8px; }
+  .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 20px; }
+  .tile { background: var(--surface); border-radius: 16px; padding: 18px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 0 0 .5px var(--line); }
+  .tile b { display: block; font-size: 30px; line-height: 1.1; letter-spacing: -.02em; color: var(--navy); }
+  .tile span { display: block; margin-top: 6px; font-size: 13px; color: var(--ink-2); line-height: 1.35; }
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; align-items: stretch; }
+  .step { position: relative; background: var(--surface); border-radius: 16px; padding: 16px 16px 18px; margin-right: 28px; box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 0 0 .5px var(--line); }
+  .step:last-child { margin-right: 0; }
+  .step:not(:last-child)::after { content: ""; position: absolute; right: -22px; top: 50%; width: 16px; height: 16px; transform: translateY(-50%);
+    background: no-repeat center/16px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 8h10M8 3l5 5-5 5' fill='none' stroke='%235f5f64' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+  .step small { display: block; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; }
+  .step b { display: block; margin: 4px 0 6px; font-size: 16px; }
+  .step p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+  .step.key { background: var(--accent); color: #fff; box-shadow: 0 6px 18px rgba(0,102,204,.28); }
+  .step.key small, .step.key p { color: #dbe9fa; }
+  .caption { margin: 12px 2px 0; font-size: 14px; color: var(--ink-2); }
+  .cards3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .cards6 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .card { background: var(--surface); border-radius: 16px; padding: 16px 18px; box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 0 0 .5px var(--line); }
+  .card b { display: block; font-size: 15.5px; margin-bottom: 4px; }
+  .card p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+  .card code { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--navy); background: var(--accent-wash); padding: 2px 6px; border-radius: 6px; display: inline-block; margin-top: 8px; }
+  ol.build { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  ol.build li { counter-increment: s; background: var(--surface); border-radius: 16px; padding: 14px 16px; font-size: 13.5px; color: var(--ink-2); box-shadow: 0 0 0 .5px var(--line); }
+  ol.build li::before { content: counter(s); display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+  ol.build li b { display: block; color: var(--ink); font-size: 14.5px; margin-bottom: 2px; }
+  .stack { display: grid; grid-template-columns: 160px 1fr; gap: 8px 16px; background: var(--surface); border-radius: 16px; padding: 18px 20px; box-shadow: 0 0 0 .5px var(--line); }
+  .stack dt { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; padding-top: 5px; }
+  .stack dd { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font-size: 13px; padding: 4px 10px; border-radius: 999px; background: var(--bg); box-shadow: inset 0 0 0 .5px var(--line); white-space: nowrap; }
+  .chip.ai { background: var(--accent-wash); color: var(--navy); }
+  footer { margin-top: 28px; padding: 18px 22px; border-radius: 16px; background: var(--navy); color: #dbe6f5; font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px 28px; align-items: center; }
+  footer a { color: #fff; font-weight: 600; }
+  footer .honest { flex-basis: 100%; color: #a9c4ea; font-size: 13px; }
+  @media (max-width: 900px) {
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .flow, .cards3, .cards6, ol.build { grid-template-columns: 1fr; }
+    .step { margin: 0 0 22px; }
+    .step:not(:last-child)::after { right: 50%; top: auto; bottom: -19px; transform: translateX(50%) rotate(90deg); }
+    .thesis { font-size: 44px; }
+    .hero { padding: 30px 24px; }
+    .stack { grid-template-columns: 1fr; }
+  }
+  @media print { body { background: #fff; } main { padding: 0; } .hero, .step.key, footer, ol.build li::before { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <div class="eyebrow">Strainwatch · technical execution · JunctionX Turku 2026, Tyks x Mylab challenge</div>
+    <h1 class="thesis">Every number counted.<br>Nothing predicted.</h1>
+    <p>Strainwatch turns a hospital's microbiology results into a weekly, ward-level picture of antibiotic resistance: possible clusters, THL alert organisms, policy-line crossings and data gaps for infection control, and a flag on the drug a doctor is ordering when something is going on.</p>
+    <p>It runs on the laboratory's isolate export (here the challenge's synthetic Tyks dataset), with statistics and fixed clinical rules deciding, people approving, and a language model only allowed to word a message.</p>
+  </section>
+
+  <div class="tiles">
+    <div class="tile"><b>441</b><span>automated tests, incl. 8 browser click-throughs</span></div>
+    <div class="tile"><b>24,571</b><span>isolates over 3 years, 9 hospital units</span></div>
+    <div class="tile"><b>92% vs 78%</b><span>of 1,350 simulated clusters found, vs best count method</span></div>
+    <div class="tile"><b>4 days</b><span>first sample to ICU cluster flag (synthetic)</span></div>
+    <div class="tile"><b>0</b><span>patient identifiers ever sent to the model</span></div>
+    <div class="tile"><b>231 × 2</b><span>message templates, English and Finnish</span></div>
+  </div>
+  <p class="caption" style="font-size:12px">Sources: pytest run; the challenge dataset; spike-in benchmark (analysis 27e, best count method at under one false alarm a year); the ICU case file, 7 Mar 2026; the identifier guard in aei/narrator; aei/templates_fi.py.</p>
+
+  <h2>The core process</h2>
+  <div class="flow">
+    <div class="step"><small>Input</small><b>Lab isolate export</b><p>Isolates with S/R per drug, ward, sample date and patient sex, age and home area.</p></div>
+    <div class="step"><small>Rules</small><b>Effective results</b><p>EUCAST expected phenotypes, the MRSA cefoxitin screen and the local ESBL rule turn raw S/R into what counts.</p></div>
+    <div class="step key"><small>Detection</small><b>Statistics, not prediction</b><p>Shared-antibiogram clusters with a rarity gate, THL rules, change tests and policy lines, strictly as of each week.</p></div>
+    <div class="step"><small>Decision</small><b>People decide</b><p>Infection control approves alerts; the order layer flags the doctor's drug and never names another one.</p></div>
+    <div class="step"><small>Output</small><b>Text from counts</b><p>Every sentence is rendered from computed slots in English or Finnish; the model may only word the ED heads-up.</p></div>
+  </div>
+  <p class="caption">A clinical microbiologist must be able to trace every number back to its count, so the decisions sit in testable rules and statistics, never in a model's guess.</p>
+
+  <h2>Architecture</h2>
+  <div class="cards3">
+    <div class="card"><b>Analytics engine</b><p>Loads the export, applies the effective-result rules, runs 9 detectors and builds the Monday brief, My ward coverage and the order check.</p><code>aei/ · aei/detectors/</code></div>
+    <div class="card"><b>API</b><p>FastAPI service with per-session demo state in SQLite, rate limits, English and Finnish output, and CDS Hooks endpoints for patient records that support them.</p><code>aei/api.py · aei/store.py · aei/i18n.py</code></div>
+    <div class="card"><b>Web app</b><p>Plain HTML, CSS and ES modules with no build step: the brief with the ward heat map and case files, My ward, the replay and the order layer.</p><code>web/</code></div>
+  </div>
+
+  <h2>What we chose, and why</h2>
+  <div class="cards6">
+    <div class="card"><b>The model words, it never decides</b><p>Claude may only phrase the ED heads-up. It writes placeholders, code inserts the numbers, and a validator rejects digits and prediction words; any failure falls back to fixed text.</p></div>
+    <div class="card"><b>Checked against the raw data</b><p>Independent scripts re-derived the numbers on every screen from the CSVs, and 24 tests pin the headline numbers to that derivation.</p></div>
+    <div class="card"><b>The doctor decides</b><p>The order layer stays quiet by default, interrupts only at signing for an approved alert or the patient's own resistant result, and never recommends a drug.</p></div>
+    <div class="card"><b>Privacy and misuse</b><p>No identifiers reach the model, request bodies are never logged, the CSVs are never in git or downloadable, and writes are per session and rate-limited.</p></div>
+    <div class="card"><b>A demo that stays honest</b><p>Strict as-of: nothing after the chosen week changes its numbers. 101 weeks replay from a cache keyed to the code and data, on our own server in Helsinki.</p></div>
+    <div class="card"><b>Readable for everyone</b><p>English and Finnish with reviewed clinical terms, colour never the only signal on the heat map, keyboard use throughout, and layouts from 320 px up.</p></div>
+  </div>
+
+  <h2>How we built it</h2>
+  <ol class="build">
+    <li><b>Research and sources</b>Dataset profiling, the Tyks microbiologist's talk, EUCAST, THL and feasibility research.</li>
+    <li><b>Contract first</b>A specification of data, time model, evidence object and endpoints before code.</li>
+    <li><b>Parallel Claude Code agents</b>Detectors, API, views and QA built in parallel against that contract.</li>
+    <li><b>Independent review</b>An OpenAI Codex comparison of the analysis plus independent recomputes; findings verified and fixed.</li>
+    <li><b>Quality gate</b>ruff, Prettier, ESLint and 441 tests, including source-pinned and browser tests, before every push.</li>
+  </ol>
+
+  <h2>Built with</h2>
+  <dl class="stack">
+    <dt>Development</dt><dd><span class="chip">Claude Code</span><span class="chip">OpenAI Codex</span><span class="chip">Git</span><span class="chip">GitHub</span></dd>
+    <dt>Language</dt><dd><span class="chip">Python 3.12</span><span class="chip">JavaScript (ES modules)</span><span class="chip">HTML</span><span class="chip">CSS</span></dd>
+    <dt>Frontend</dt><dd><span class="chip">No framework, no build step</span><span class="chip">Inter (SIL OFL)</span></dd>
+    <dt>Backend and AI</dt><dd><span class="chip">FastAPI</span><span class="chip">Uvicorn</span><span class="chip">pandas</span><span class="chip">NumPy</span><span class="chip">SciPy</span><span class="chip">pydantic</span><span class="chip">SQLite</span><span class="chip">Anthropic SDK</span><span class="chip ai">claude-haiku-5-5 (optional wording)</span></dd>
+    <dt>Data sources</dt><dd><span class="chip">Tyks x Mylab synthetic dataset (6 CSVs)</span><span class="chip">EUCAST expert rules</span><span class="chip">THL guidance 2/2020</span><span class="chip">WHO AWaRe</span></dd>
+    <dt>Quality</dt><dd><span class="chip">pytest</span><span class="chip">Playwright</span><span class="chip">ruff</span><span class="chip">Prettier</span><span class="chip">ESLint</span><span class="chip">Source-pinned recompute tests</span></dd>
+    <dt>Ship</dt><dd><span class="chip">Docker</span><span class="chip">Docker Compose</span><span class="chip">Caddy (HTTPS)</span><span class="chip">UpCloud, Helsinki</span><span class="chip">Cloudflare DNS</span></dd>
+  </dl>
+
+  <footer>
+    <span>Live demo: <a href="https://strainwatch.wicflow.com">strainwatch.wicflow.com</a></span>
+    <span>Code: <a href="https://github.com/Wicflow-Oy/jx26-tyks">github.com/Wicflow-Oy/jx26-tyks</a></span>
+    <span class="honest">Demo: all data is synthetic, the hospital order screen is a simulated stand-in, heads-ups are never sent, and the nightly lab export is replaced by the challenge CSVs.</span>
+  </footer>
+</main>
+</body>
+</html>

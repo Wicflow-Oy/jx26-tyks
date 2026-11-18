@@ -18,6 +18,24 @@ hostname, behind the host's existing reverse proxy.
 
 This guide uses `/opt/jx/tyks` as the folder and `<host>` for the public hostname (the `TYKS_HOST` value).
 
+## Wicflow's host: Hostinger (since 18.11.2026)
+
+The public demo (https://strainwatch.wicflow.com) runs on Wicflow's Hostinger server in `/docker/jx-tyks/tyks`, a git
+checkout of `main`, behind Traefik (case A). There every command uses three compose files:
+
+```bash
+cd /docker/jx-tyks/tyks
+C="docker compose --env-file .env -f deploy/compose.yml -f deploy/compose.traefik.yml -f deploy/compose.hostinger.yml"
+docker tag jx-tyks:live jx-tyks:prev && git pull && $C up -d --build   # update (step 6)
+TYKS_TAG=prev $C up -d --no-build                                      # roll back (step 7)
+$C down                                                                # remove (step 7)
+```
+
+`deploy/compose.hostinger.yml` keeps what the earlier host's Caddy did: a 64 KB request body limit, gzip, and
+`/technical` (the technical page and PDF in `tech/`, served by a small nginx, `jx-tyks-tech`). A command without it
+recreates the app without those and leaves `/technical` unserved. `.env` there sets `TYKS_HOST=strainwatch.wicflow.com`,
+`TRAEFIK_NETWORK=n8n_default` and `TYKS_CERTRESOLVER=mytlschallenge`. The dataset is in `data/` as in step 2.
+
 ## 0. Read-only preflight (changes nothing)
 ```bash
 docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}\t{{.Status}}"
@@ -175,8 +193,11 @@ docker exec jx-tyks python -m aei.precompute --weeks demo --narration
 cd /opt/jx/tyks && docker tag jx-tyks:live jx-tyks:prev && git pull
 ```
 Then run the same `up -d --build` command as in 4a or 4b.
+On Wicflow's Hostinger host, use the commands in "Wicflow's host: Hostinger" instead.
 
 ## 7. Roll back or remove (this project only)
+On Wicflow's Hostinger host, use the commands in "Wicflow's host: Hostinger".
+
 **Back to the previous image** (case A shown; use `compose.port.yml` for case B):
 ```bash
 TYKS_TAG=prev docker compose -p jx-tyks -f deploy/compose.yml -f deploy/compose.traefik.yml --env-file .env up -d --no-build
